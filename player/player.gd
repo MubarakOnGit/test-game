@@ -1,13 +1,18 @@
 class_name Player
 extends CharacterBody3D
 
-const SPEED = 12.0
+const WALK_SPEED = 6.0
+const RUN_SPEED = 12.0
 const JUMP_VELOCITY = 15.0
 
 var camera_y_rotation: float = 45.0 # Updated by WorldManager
 
 # Get the gravity from the project settings to be synced with RigidBody nodes.
 var gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity", 9.8) * 2.5
+
+var _model: Node3D
+var _anim: AnimationPlayer
+var _current_anim: String = ""
 
 func _init() -> void:
 	name = "Player"
@@ -20,18 +25,32 @@ func _init() -> void:
 	collision.position = Vector3(0, 0.9, 0)
 	add_child(collision)
 	
-	var mesh_instance = MeshInstance3D.new()
-	var mesh = CapsuleMesh.new()
-	mesh.radius = 0.4
-	mesh.height = 1.8
-	mesh_instance.mesh = mesh
-	mesh_instance.position = Vector3(0, 0.9, 0)
-	
-	var mat = StandardMaterial3D.new()
-	mat.albedo_color = Color("#FF5252") # Keep the red player color!
-	mesh_instance.material_override = mat
-	
-	add_child(mesh_instance)
+func _ready() -> void:
+	var glb = load("res://assets/man.glb").instantiate()
+	glb.scale = Vector3(2.5, 2.5, 2.5) # Scale up the tiny model
+	add_child(glb)
+	_model = glb
+	_anim = glb.get_node("AnimationPlayer")
+	if _anim:
+		# Force looping for movement animations (GLB imports often default to no loop)
+		var loop_anims = ["CharacterArmature|Idle", "CharacterArmature|Walk", "CharacterArmature|Run"]
+		for a in loop_anims:
+			if _anim.has_animation(a):
+				_anim.get_animation(a).loop_mode = Animation.LOOP_LINEAR
+				
+		# Enable blending between animations
+		_anim.set_blend_time("CharacterArmature|Idle", "CharacterArmature|Walk", 0.2)
+		_anim.set_blend_time("CharacterArmature|Walk", "CharacterArmature|Idle", 0.2)
+		_anim.set_blend_time("CharacterArmature|Walk", "CharacterArmature|Run", 0.2)
+		_anim.set_blend_time("CharacterArmature|Run", "CharacterArmature|Walk", 0.2)
+		_anim.set_blend_time("CharacterArmature|Idle", "CharacterArmature|Run", 0.2)
+		_anim.set_blend_time("CharacterArmature|Run", "CharacterArmature|Idle", 0.2)
+		_play_anim("CharacterArmature|Idle")
+
+func _play_anim(anim_name: String) -> void:
+	if _anim and _current_anim != anim_name:
+		_anim.play(anim_name)
+		_current_anim = anim_name
 
 func _physics_process(delta: float) -> void:
 	# Add the gravity.
@@ -56,12 +75,25 @@ func _physics_process(delta: float) -> void:
 	# Rotate the input vector by the camera's Y rotation so W is always "up/forward" relative to the screen.
 	var direction = (Vector3(input_dir.x, 0, input_dir.y)).rotated(Vector3.UP, deg_to_rad(camera_y_rotation)).normalized()
 	
+	var is_running = Input.is_physical_key_pressed(KEY_SHIFT)
+	var current_speed = RUN_SPEED if is_running else WALK_SPEED
+	
 	if direction:
-		velocity.x = direction.x * SPEED
-		velocity.z = direction.z * SPEED
+		velocity.x = direction.x * current_speed
+		velocity.z = direction.z * current_speed
+		
+		# Rotate model to face direction of movement (inverted Z to face forwards)
+		var target_rotation = atan2(direction.x, direction.z)
+		_model.rotation.y = lerp_angle(_model.rotation.y, target_rotation, 10.0 * delta)
+		
+		if is_running:
+			_play_anim("CharacterArmature|Run")
+		else:
+			_play_anim("CharacterArmature|Walk")
 	else:
-		velocity.x = move_toward(velocity.x, 0, SPEED)
-		velocity.z = move_toward(velocity.z, 0, SPEED)
+		velocity.x = move_toward(velocity.x, 0, WALK_SPEED)
+		velocity.z = move_toward(velocity.z, 0, WALK_SPEED)
+		_play_anim("CharacterArmature|Idle")
 
 	move_and_slide()
 	
@@ -98,16 +130,12 @@ func _handle_water_ripples(is_moving: bool) -> void:
 				WorldEventBus.water_ripple_spawned.emit(global_position, 0.8, 0.3, 0.2, 2.0)
 		elif partially_submerged:
 			# IN WATER + STANDING + PARTIALLY SUBMERGED -> Gentle idle ripples
-			# Simulates the body displacing water even while still
 			_idle_ripple_timer += get_physics_process_delta_time()
-			if _idle_ripple_timer >= 2.5:
+			if _idle_ripple_timer > 2.0: # Every 2 seconds while idle
 				_idle_ripple_timer = 0.0
-				# Very subtle: low strength, slow expansion
-				WorldEventBus.water_ripple_spawned.emit(global_position, 1.2, 0.15, 0.08, 1.2)
+				WorldEventBus.water_ripple_spawned.emit(global_position, 0.5, 0.15, 0.1, 3.0)
 	else:
 		if _water_state == WaterState.IN_WATER:
-			# EXITING WATER
+			# LEAVING WATER -> Medium Splash
 			_water_state = WaterState.LAND
-			_idle_ripple_timer = 0.0
-			WorldEventBus.water_ripple_spawned.emit(global_position, 1.0, 0.4, 0.3, 3.0)
-
+			WorldEventBus.water_ripple_spawned.emit(global_position, 1.2, 0.5, 0.8, 3.0)

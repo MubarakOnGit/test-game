@@ -1,0 +1,56 @@
+[gd_scene format=3 uid="uid://4su3jklrplkv"]
+
+[ext_resource type="Material" uid="uid://bark123" path="res://assets/tree_bark_mat.tres" id="1_bark"]
+[ext_resource type="Material" uid="uid://leaf123" path="res://assets/tree_leaf_mat.tres" id="2_leaf"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_trunk"]
+size = Vector3(0.8, 1, 0.8)
+
+[sub_resource type="BoxMesh" id="BoxMesh_leaves_large"]
+size = Vector3(3.2, 0.8, 3.2)
+
+[sub_resource type="BoxMesh" id="BoxMesh_leaves_mid"]
+size = Vector3(2.4, 0.8, 2.4)
+
+[sub_resource type="BoxMesh" id="BoxMesh_leaves_small"]
+size = Vector3(1.6, 0.8, 1.6)
+
+[sub_resource type="BoxMesh" id="BoxMesh_leaves_tip"]
+size = Vector3(0.8, 0.8, 0.8)
+
+[node name="CubeTree" type="Node3D" unique_id=192641394]
+
+[node name="Trunk_Base" type="MeshInstance3D" parent="." unique_id=1239469996]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
+mesh = SubResource("BoxMesh_trunk")
+surface_material_override/0 = ExtResource("1_bark")
+
+[node name="Trunk_Mid" type="MeshInstance3D" parent="." unique_id=1489880187]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+mesh = SubResource("BoxMesh_trunk")
+surface_material_override/0 = ExtResource("1_bark")
+
+[node name="Trunk_Top" type="MeshInstance3D" parent="." unique_id=786657675]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.5, 0)
+mesh = SubResource("BoxMesh_trunk")
+surface_material_override/0 = ExtResource("1_bark")
+
+[node name="Leaves_Large" type="MeshInstance3D" parent="." unique_id=1814481531]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3, 0)
+mesh = SubResource("BoxMesh_leaves_large")
+surface_material_override/0 = ExtResource("2_leaf")
+
+[node name="Leaves_Mid" type="MeshInstance3D" parent="." unique_id=885840464]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.8, 0)
+mesh = SubResource("BoxMesh_leaves_mid")
+surface_material_override/0 = ExtResource("2_leaf")
+
+[node name="Leaves_Small" type="MeshInstance3D" parent="." unique_id=184855248]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.6, 0)
+mesh = SubResource("BoxMesh_leaves_small")
+surface_material_override/0 = ExtResource("2_leaf")
+
+[node name="Leaves_Tip" type="MeshInstance3D" parent="." unique_id=326248513]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 5.2, 0)
+mesh = SubResource("BoxMesh_leaves_tip")
+surface_material_override/0 = ExtResource("2_leaf")

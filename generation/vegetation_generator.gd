@@ -15,7 +15,6 @@ static func _ensure_init(world_seed: int) -> void:
 
 ## Populates data.vegetation with tree placements based on biome and height.
 static func generate(data: ChunkData, world_seed: int) -> void:
-	return # Trees disabled for now
 
 	_ensure_init(world_seed)
 

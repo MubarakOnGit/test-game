@@ -5,23 +5,10 @@ static var _oak_mesh: Mesh = null
 
 static func _ensure_meshes() -> void:
 	if _pine_mesh == null:
-		var pine_scene = load("res://assets/pineTree.glb")
-		if pine_scene:
-			var instance = pine_scene.instantiate()
-			for child in instance.get_children():
-				if child is MeshInstance3D:
-					_pine_mesh = child.mesh
-					break
-			instance.free()
+		_pine_mesh = load("res://assets/pineTreeBaked.res")
 	if _oak_mesh == null:
-		var oak_scene = load("res://assets/oakTree.glb")
-		if oak_scene:
-			var instance = oak_scene.instantiate()
-			for child in instance.get_children():
-				if child is MeshInstance3D:
-					_oak_mesh = child.mesh
-					break
-			instance.free()
+		_oak_mesh = load("res://assets/oakTreeBaked.res")
+
 
 ## Populates the MultiMeshes in the ChunkNode based on VegetationData.
 static func commit(node: ChunkNode, data: ChunkData) -> void:
@@ -44,11 +31,12 @@ static func commit(node: ChunkNode, data: ChunkData) -> void:
 		var hidx := ChunkData.hi(int(lx), int(lz))
 		var y := data.heights[hidx]
 		
-		# Local transform relative to chunk origin
-		var pos := Vector3(lx * ChunkData.TILE_SIZE, y, lz * ChunkData.TILE_SIZE)
-		# Add a bit of random rotation based on position
+		# Local transform relative to chunk origin. Shifted down 0.1 to avoid Z-fighting with terrain.
+		var pos := Vector3(lx * ChunkData.TILE_SIZE, y - 0.1, lz * ChunkData.TILE_SIZE)
 		var rot := float(hash(pos)) / 2147483647.0 * TAU
-		var t := Transform3D().rotated(Vector3.UP, rot).translated(pos).scaled(Vector3(3.0, 3.0, 3.0))
+		# Apply rotation, translation, and scale (double size as requested)
+		var b := Basis().scaled(Vector3(2.0, 2.0, 2.0)).rotated(Vector3.UP, rot)
+		var t := Transform3D(b, pos)
 		
 		if sp == VegetationData.PINE:
 			if node.pine_multimesh.multimesh != null:
@@ -76,4 +64,6 @@ static func _setup_multimesh(mmi: MultiMeshInstance3D, count: int, mesh: Mesh) -
 	else:
 		mm.mesh = mesh
 		
+	# Force a massive AABB to prevent Godot from frustum-culling procedurally generated meshes
+	mmi.custom_aabb = AABB(Vector3(-1000, -1000, -1000), Vector3(2000, 2000, 2000))
 	mmi.multimesh = mm

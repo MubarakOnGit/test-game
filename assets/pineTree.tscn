@@ -1,0 +1,46 @@
+[gd_scene load_steps=8 format=3 uid="uid://pinetree123"]
+
+[ext_resource type="Material" path="res://assets/tree_bark_mat.tres" id="1_bark"]
+[ext_resource type="Material" path="res://assets/tree_leaf_mat.tres" id="2_leaf"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_trunk"]
+size = Vector3(0.6, 1.2, 0.6)
+
+[sub_resource type="BoxMesh" id="BoxMesh_l1"]
+size = Vector3(2.4, 0.8, 2.4)
+
+[sub_resource type="BoxMesh" id="BoxMesh_l2"]
+size = Vector3(1.8, 0.8, 1.8)
+
+[sub_resource type="BoxMesh" id="BoxMesh_l3"]
+size = Vector3(1.2, 0.8, 1.2)
+
+[sub_resource type="BoxMesh" id="BoxMesh_l4"]
+size = Vector3(0.6, 1.0, 0.6)
+
+[node name="PineTree" type="Node3D"]
+
+[node name="Trunk" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 0)
+mesh = SubResource("BoxMesh_trunk")
+surface_material_override/0 = ExtResource("1_bark")
+
+[node name="L1" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6, 0)
+mesh = SubResource("BoxMesh_l1")
+surface_material_override/0 = ExtResource("2_leaf")
+
+[node name="L2" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.4, 0)
+mesh = SubResource("BoxMesh_l2")
+surface_material_override/0 = ExtResource("2_leaf")
+
+[node name="L3" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.2, 0)
+mesh = SubResource("BoxMesh_l3")
+surface_material_override/0 = ExtResource("2_leaf")
+
+[node name="L4" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.1, 0)
+mesh = SubResource("BoxMesh_l4")
+surface_material_override/0 = ExtResource("2_leaf")
