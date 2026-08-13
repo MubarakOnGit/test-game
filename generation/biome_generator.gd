@@ -36,6 +36,12 @@ static func _classify(data: ChunkData, lx: int, lz: int, h: float, temp: float, 
 		return SNOW
 	elif h >= 4.0:
 		return ROCK
+	elif h <= ChunkData.SEA_LEVEL:
+		# Tile is at or below water level — always SAND, never GRASS.
+		# _is_shore() only checks 1 tile radius, so wide lakes/rivers have
+		# centre tiles that pass the shore check but are still underwater.
+		# This catches all of them regardless of lake/river width.
+		return SAND
 	elif _is_shore(data, lx, lz):
 		return SAND
 	else:

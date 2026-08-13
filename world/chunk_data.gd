@@ -30,6 +30,7 @@ var fertilities: PackedFloat32Array   # 0.0–1.0
 
 # ─── Object Placement ─────────────────────────────────────────────────────────
 var vegetation: VegetationData
+var animals: Array[Dictionary] = []
 
 # ─── Metadata ─────────────────────────────────────────────────────────────────
 var metadata: ChunkMetadata
@@ -66,6 +67,7 @@ static func create(cx_: int, cz_: int, seed: int) -> ChunkData:
 	d.fertilities  = PackedFloat32Array(); d.fertilities.resize(csq)
 
 	d.vegetation = VegetationData.new()
+	d.animals = []
 	d.metadata   = ChunkMetadata.new()
 	return d
 

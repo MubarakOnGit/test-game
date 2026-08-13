@@ -11,6 +11,7 @@ var command_system: CommandSystem
 # ─── Scene Elements ───────────────────────────────────────────────────────────
 var camera_pivot: Node3D
 var camera: Camera3D
+var camera_scaler: CameraScaler
 var camera_target := Vector3.ZERO
 var camera_speed: float = 22.0
 
@@ -61,6 +62,26 @@ func _ready() -> void:
 	var center_chunk = _get_camera_chunk()
 	chunk_manager.tick(center_chunk)
 	
+	# DEBUG: Scan the entire scene tree for rogue meshes
+	print("DEBUG: SCENE TREE DUMP START")
+	_debug_dump_tree(get_tree().root, 0)
+	print("DEBUG: SCENE TREE DUMP END")
+	
+	# DEBUG: check first generated chunk for bad trees
+	var data = database.get_chunk(center_chunk)
+	if data:
+		print("DEBUG: Checking center chunk trees...")
+		var veg = data.vegetation
+		for i in range(veg.count()):
+			var lx = veg.local_xs[i]
+			var lz = veg.local_zs[i]
+			var hidx = ChunkData.hi(int(lx), int(lz))
+			var h = data.heights[hidx]
+			var w = data.water_levels[hidx]
+			var biome = data.biomes[ChunkData.bi(int(lx), int(lz))]
+			if h < 2.0:
+				print("BAD TREE: h=", h, " w=", w, " biome=", biome, " lx=", lx, " lz=", lz)
+	
 	var sim_manager = SimulationManager.new()
 	sim_manager.setup(database, chunk_manager)
 	add_child(sim_manager)
@@ -102,6 +123,23 @@ func _get_camera_chunk() -> Vector2i:
 	var cz := floori(camera_target.z / (ChunkData.CHUNK_SIZE * ChunkData.TILE_SIZE))
 	return Vector2i(cx, cz)
 
+func _debug_dump_tree(node: Node, depth: int) -> void:
+	var indent = ""
+	for i in range(depth): indent += "  "
+	
+	var node_type = node.get_class()
+	if node is MultiMeshInstance3D:
+		var count = 0
+		if node.multimesh: count = node.multimesh.instance_count
+		print(indent, node.name, " (", node_type, ") - Instances: ", count)
+	elif node is MeshInstance3D:
+		print(indent, node.name, " (", node_type, ")")
+	elif depth < 3: # Only print non-meshes for top levels to save spam
+		print(indent, node.name, " (", node_type, ")")
+		
+	for child in node.get_children():
+		_debug_dump_tree(child, depth + 1)
+
 # ─── Camera & Input ───────────────────────────────────────────────────────────
 
 func _setup_camera() -> void:
@@ -112,7 +150,7 @@ func _setup_camera() -> void:
 	camera = Camera3D.new()
 	camera.name = "Camera"
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
-	camera.size = 38
+	camera.size = 38  # Base size — overridden immediately by CameraScaler
 	camera.near = 0.1
 	camera.far = 500
 
@@ -121,6 +159,12 @@ func _setup_camera() -> void:
 	camera_pivot.rotation_degrees = Vector3(-35.264, _rotation_y, 0.0)
 	camera.position = Vector3(0, 0, 60)
 	camera_pivot.position = camera_target
+
+	# Responsive scaling — adjusts camera.size to match any screen resolution
+	camera_scaler = CameraScaler.new()
+	camera_scaler.name = "CameraScaler"
+	add_child(camera_scaler)
+	camera_scaler.setup(camera)
 
 func _handle_camera_input(_delta: float) -> void:
 	if player:
