@@ -34,8 +34,8 @@ var player_marker: MeshInstance3D
 var loaded_chunks: Dictionary = {}
 var chunk_queue: Array[Vector2i] = []
 var water_plane: MeshInstance3D
-var baked_pine_mesh: ArrayMesh
-var baked_oak_mesh: ArrayMesh
+var pine_tree_scene: PackedScene = preload("res://assets/pineTree.glb")
+var oak_tree_scene: PackedScene = preload("res://assets/oakTree.glb")
 
 # ─── PALETTES ───
 var grass_colors := [
@@ -55,7 +55,6 @@ var snow_color := Color("#EDEDF0")
 
 func _ready():
 	randomize()
-	_bake_trees()
 	_init_noise()
 	_setup_water()
 	_setup_camera()
@@ -276,7 +275,7 @@ func _load_chunk(cx: int, cz: int):
 			
 			# Pick tree type based on noise
 			var tree: Node3D
-			if t > 0.6:
+			if t > 0.5:
 				tree = _create_oak_tree()
 			else:
 				tree = _create_pine_tree()
@@ -526,101 +525,14 @@ func _setup_player_marker():
 
 # ─── TREE GENERATION ───
 
-var tree_trunk_color := Color("#6D4C41")
-var pine_leaf_colors := [Color("#2E7D32"), Color("#1B5E20"), Color("#388E3C")]
-var oak_leaf_colors := [Color("#43A047"), Color("#2E7D32"), Color("#66BB6A")]
-
-func _bake_trees():
-	var mat := StandardMaterial3D.new()
-	mat.vertex_color_use_as_albedo = true
-	mat.roughness = 0.8
-	
-	baked_pine_mesh = _build_pine_mesh()
-	baked_pine_mesh.surface_set_material(0, mat)
-	
-	baked_oak_mesh = _build_oak_mesh()
-	baked_oak_mesh.surface_set_material(0, mat)
-
-func _create_pine_tree() -> MeshInstance3D:
-	var tree := MeshInstance3D.new()
+func _create_pine_tree() -> Node3D:
+	var tree: Node3D = pine_tree_scene.instantiate()
 	tree.name = "PineTree"
-	tree.mesh = baked_pine_mesh
-	tree.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	tree.scale = Vector3(3.0, 3.0, 3.0)
 	return tree
 
-func _create_oak_tree() -> MeshInstance3D:
-	var tree := MeshInstance3D.new()
+func _create_oak_tree() -> Node3D:
+	var tree: Node3D = oak_tree_scene.instantiate()
 	tree.name = "OakTree"
-	tree.mesh = baked_oak_mesh
-	tree.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	tree.scale = Vector3(3.0, 3.0, 3.0)
 	return tree
-
-func _build_pine_mesh() -> ArrayMesh:
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	
-	for y in range(2):
-		_add_tree_cube_st(st, 0, y, 0, tree_trunk_color)
-	
-	for x in range(-1, 2):
-		for z in range(-1, 2):
-			_add_tree_cube_st(st, x, 2, z, _pick_color(pine_leaf_colors))
-			_add_tree_cube_st(st, x, 3, z, _pick_color(pine_leaf_colors))
-	
-	for x in range(0, 2):
-		for z in range(0, 2):
-			_add_tree_cube_st(st, x, 4, z, _pick_color(pine_leaf_colors))
-			_add_tree_cube_st(st, x, 5, z, _pick_color(pine_leaf_colors))
-	
-	_add_tree_cube_st(st, 0, 6, 0, _pick_color(pine_leaf_colors))
-	
-	return st.commit()
-
-func _build_oak_mesh() -> ArrayMesh:
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	
-	for x in range(2):
-		for z in range(2):
-			for y in range(3):
-				_add_tree_cube_st(st, x, y, z, tree_trunk_color)
-	
-	_add_tree_cube_st(st, -1, 0, 0, tree_trunk_color)
-	_add_tree_cube_st(st, 2, 0, 0, tree_trunk_color)
-	_add_tree_cube_st(st, 0, 0, -1, tree_trunk_color)
-	_add_tree_cube_st(st, 0, 0, 2, tree_trunk_color)
-	
-	var leaf := _pick_color(oak_leaf_colors)
-	
-	for x in range(-1, 4):
-		for z in range(-1, 4):
-			var dx: int = abs(x - 1)
-			var dz: int = abs(z - 1)
-			if dx + dz <= 3:
-				_add_tree_cube_st(st, x, 3, z, leaf)
-			if dx <= 2 and dz <= 2 and dx + dz <= 3:
-				_add_tree_cube_st(st, x, 4, z, _pick_color(oak_leaf_colors))
-	
-	for x in range(0, 3):
-		for z in range(0, 3):
-			_add_tree_cube_st(st, x, 5, z, _pick_color(oak_leaf_colors))
-			_add_tree_cube_st(st, x, 6, z, _pick_color(oak_leaf_colors))
-	
-	_add_tree_cube_st(st, -1, 4, 1, _pick_color(oak_leaf_colors))
-	_add_tree_cube_st(st, 3, 4, 1, _pick_color(oak_leaf_colors))
-	_add_tree_cube_st(st, 1, 4, -1, _pick_color(oak_leaf_colors))
-	_add_tree_cube_st(st, 1, 4, 3, _pick_color(oak_leaf_colors))
-	_add_tree_cube_st(st, 1, 5, -1, _pick_color(oak_leaf_colors))
-	_add_tree_cube_st(st, 1, 5, 3, _pick_color(oak_leaf_colors))
-	
-	return st.commit()
-
-func _add_tree_cube_st(st: SurfaceTool, x: int, y: int, z: int, color: Color):
-	st.set_color(color)
-	var transform := Transform3D(Basis(), Vector3(x, y, z))
-	var box := BoxMesh.new()
-	box.size = Vector3(0.92, 0.92, 0.92)
-	st.append_from(box, 0, transform)
-
-func _pick_color(colors: Array) -> Color:
-	return colors[randi() % colors.size()]
