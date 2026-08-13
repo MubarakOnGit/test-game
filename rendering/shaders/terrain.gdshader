@@ -117,13 +117,14 @@ void fragment() {
 		// ─── SIDE faces ───
 		// Stratified bands matching original prototype logic
 		if (dist_from_top < 0.12) {
-			// Top sliver matches surface type
+			// Top sliver — matches surface type EXCEPT grass (grass is only on top face)
 			if (biome > 2.5) albedo = snow_color;
 			else if (biome > 1.5) albedo = rock_colors[0];
 			else if (biome > 0.5) albedo = sand_colors[0];
 			else {
-				int idx = int(patch_val * 6.99);
-				albedo = grass_colors[idx];
+				// Grass biome: side shows dirt, not green — green is top-face only
+				int idx = int(patch_val * 3.99);
+				albedo = dirt_colors[idx];
 			}
 		} else if (dist_from_top < 0.85) {
 			// Dirt band
@@ -143,7 +144,8 @@ void fragment() {
 	// ── Underwater override ────────────────────────────────────────────────────
 	// Any block below the water surface becomes sand / wet-sand,
 	// then gets a sky-blue depth tint on top.
-	if (world_pos.y < 0.45) {
+	const float WATER_Y = 0.45;
+	if (world_pos.y < WATER_Y) {
 		// Replace color: top face → sand, side face → darker sandy dirt
 		int sand_idx = int(patch_val * 2.99);
 		if (is_top) {
@@ -155,12 +157,30 @@ void fragment() {
 		}
 
 		// Depth darkening: deeper = darker
-		float depth_factor = clamp(1.0 + (world_pos.y - 0.45) * 0.20, 0.30, 1.0);
+		float depth_factor = clamp(1.0 + (world_pos.y - WATER_Y) * 0.20, 0.30, 1.0);
 		albedo *= depth_factor;
 
 		// Subtle blue tint — keeps sand visible but underwater
 		float tint_strength = clamp(0.20 - world_pos.y * 0.08, 0.10, 0.35);
 		albedo = mix(albedo, vec3(0.15, 0.45, 0.75), tint_strength);
+
+		// ── Caustic shimmer (top faces near surface only) ──────────────────────
+		// Slow dappled light like sunlight refracted through the water surface.
+		// Only on top faces within 2 units of the surface, never overpowers depth.
+		if (is_top) {
+			float depth_below  = WATER_Y - world_pos.y;
+			float shallow_mask = 1.0 - smoothstep(0.0, 2.0, depth_below);
+			if (shallow_mask > 0.001) {
+				vec2 c1 = world_pos.xz * 0.4  + vec2( TIME * 0.06,  TIME * 0.04);
+				vec2 c2 = world_pos.xz * 0.55 + vec2(-TIME * 0.05,  TIME * 0.07);
+				float cn1    = noise(c1);
+				float cn2    = noise(c2);
+				float caustic = smoothstep(0.25, 0.75, cn1 * cn2);
+				// Cap: caustic can brighten but never exceed the pre-depth-darkened level
+				float max_add = (1.0 / depth_factor - 1.0) * length(albedo);
+				albedo += caustic * shallow_mask * min(0.07, max_add);
+			}
+		}
 	}
 
 	ALBEDO = albedo;
