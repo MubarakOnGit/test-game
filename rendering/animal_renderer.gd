@@ -7,13 +7,36 @@ static func _get_animal_scene(type_name: String) -> PackedScene:
 	if _animal_scenes.has(type_name):
 		return _animal_scenes[type_name]
 	
-	var path = "res://assets/animals/" + type_name
-	if not path.ends_with(".glb"):
-		path += ".glb"
+	var candidate_paths: Array[String] = []
+	if type_name.begins_with("res://"):
+		candidate_paths.append(type_name)
+	else:
+		var with_ext = type_name if (type_name.ends_with(".glb") or type_name.ends_with(".tscn")) else type_name + ".glb"
+		candidate_paths.append("res://assets/models/" + with_ext)
+		candidate_paths.append("res://assets/animals/" + with_ext)
+		candidate_paths.append("res://assets/" + with_ext)
 		
-	var packed = load(path)
+		if type_name == "wolf" or type_name == "Wolf":
+			candidate_paths.append("res://assets/models/wolf.glb")
+			candidate_paths.append("res://assets/animals/blocky_wolf.glb")
+		elif type_name == "blocky_wolf":
+			candidate_paths.append("res://assets/animals/blocky_wolf.glb")
+			candidate_paths.append("res://assets/models/wolf.glb")
+		elif type_name == "rabbit" or type_name == "Rabbit":
+			candidate_paths.append("res://assets/animals/blocky_rabbit.glb")
+			candidate_paths.append("res://assets/animals/low_poly_rabbit.glb")
+		
+	var packed: PackedScene = null
+	for path in candidate_paths:
+		if ResourceLoader.exists(path):
+			packed = load(path)
+			if packed:
+				break
+				
 	if packed:
 		_animal_scenes[type_name] = packed
+	else:
+		push_warning("AnimalRenderer: Could not load animal scene for type: " + type_name)
 	return packed
 
 static func commit(node: ChunkNode, data: ChunkData) -> void:
@@ -30,23 +53,24 @@ static func commit(node: ChunkNode, data: ChunkData) -> void:
 		
 		# Scale down models so they aren't massive compared to the player, and set correct animations
 		var instance = CharacterBody3D.new()
+		var type_lower: String = a_data["type"].to_lower()
 		
-		if "Shark" in a_data["type"]:
+		if "shark" in type_lower:
 			visual.scale = Vector3(0.5, 0.5, 0.5)
 			instance.set("move_anim", "Swim")
-		elif "Fish" in a_data["type"]:
+		elif "fish" in type_lower:
 			visual.scale = Vector3(0.2, 0.2, 0.2)
 			instance.set("move_anim", "Swim")
-		elif "Wolf" in a_data["type"]:
+		elif "wolf" in type_lower:
+			visual.scale = Vector3(1.7, 1.7, 1.7)
+			instance.set("move_anim", "Walk")
+		elif "stag" in type_lower:
 			visual.scale = Vector3(0.8, 0.8, 0.8)
 			instance.set("move_anim", "Walk")
-		elif "Stag" in a_data["type"]:
-			visual.scale = Vector3(0.8, 0.8, 0.8)
-			instance.set("move_anim", "Walk")
-		elif "rabbit" in a_data["type"]:
-			visual.scale = Vector3(0.25, 0.25, 0.25)
+		elif "rabbit" in type_lower:
+			visual.scale = Vector3(0.35, 0.35, 0.35)
 			instance.set("move_anim", "Run")
-		elif "bird" in a_data["type"]:
+		elif "bird" in type_lower:
 			visual.scale = Vector3(0.3, 0.3, 0.3)
 			instance.set("move_anim", "fly")
 		else:

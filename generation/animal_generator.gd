@@ -62,9 +62,9 @@ static func generate(data: ChunkData, world_seed: int) -> void:
 				else: animal_type = "Shark by Quaternius - YYsK3gRCBZ"
 			else:
 				# Land animals
-				if pick < 30: animal_type = "Wolf by Quaternius - P1gU3Qkr9r"
+				if pick < 30: animal_type = "wolf"
 				elif pick < 60: animal_type = "Stag by Quaternius - tQdzbZ1Cmw"
-				elif pick < 90: animal_type = "low_poly_rabbit"
+				elif pick < 90: animal_type = "blocky_rabbit"
 				else: animal_type = "bird_5_-_animated_low_poly" # Maybe birds just hop around
 			
 			if animal_type != "":

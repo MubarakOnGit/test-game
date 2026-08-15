@@ -182,6 +182,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			if not _is_rotating:
 				# Snap to nearest 45° on release for clean isometric angles
 				_rotation_y = roundf(_rotation_y / 45.0) * 45.0
+		elif event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed:
+			camera_scaler.zoom(-2.0)
+		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed:
+			camera_scaler.zoom(2.0)
 
 	if event is InputEventMouseMotion and _is_rotating:
 		_rotation_y -= event.relative.x * _ROTATE_SENSITIVITY

@@ -6,10 +6,15 @@ extends Node
 # camera.size = 38 looked correct at 1080p height.
 # On any other screen height it will be scaled proportionally.
 const REFERENCE_HEIGHT: float = 1080.0
-const BASE_CAMERA_SIZE: float = 38.0   # World units visible at REFERENCE_HEIGHT
+var base_camera_size: float = 38.0   # World units visible at REFERENCE_HEIGHT
 
 # ─── State ────────────────────────────────────────────────────────────────────
 var _camera: Camera3D = null
+
+func zoom(delta_amount: float) -> void:
+	base_camera_size += delta_amount
+	base_camera_size = clampf(base_camera_size, 10.0, 100.0) # Prevent zooming too far in or out
+	_apply_scale()
 
 func setup(camera: Camera3D) -> void:
 	_camera = camera
@@ -41,7 +46,7 @@ func _apply_scale() -> void:
 
 	# Scale based on height — keeps the world-unit density consistent per pixel
 	var scale_factor: float = REFERENCE_HEIGHT / viewport_size.y
-	_camera.size = BASE_CAMERA_SIZE * scale_factor
+	_camera.size = base_camera_size * scale_factor
 
 func _on_viewport_size_changed() -> void:
 	_apply_scale()
