@@ -63,10 +63,10 @@ static func generate(data: ChunkData, world_seed: int) -> void:
 			if density < -0.1:
 				continue
 				
-			# Randomly pick between Pine and Oak (using BIRCH index for Oak)
-			var species = 0 # VegetationData.PINE
+			# Randomly pick between Pine and Oak (using APPLE_TREE index for Oak)
+			var species = VegetationData.PINE
 			if abs(hash(Vector2(world_x, world_z))) % 2 == 0:
-				species = 1 # VegetationData.BIRCH
+				species = VegetationData.APPLE_TREE
 			
 			var off_x := clampf(scatter * 0.15, -0.15, 0.15)
 			var off_z := clampf(density  * 0.15, -0.15, 0.15)
@@ -83,11 +83,11 @@ static func _pick_species(world_x: int, world_z: int, h: float, moist: float) ->
 	if h > 2.8 and sn < -0.1:
 		return VegetationData.PINE
 
-	# Birch: moisture-loving, thrives near water edges and moist meadows
+	# Apple Tree: moisture-loving, thrives near water edges and moist meadows
 	if moist > 0.65 and h < 2.6:
-		return VegetationData.BIRCH
+		return VegetationData.APPLE_TREE
 	if moist > 0.5 and sn > 0.4 and h < 2.8:
-		return VegetationData.BIRCH
+		return VegetationData.APPLE_TREE
 
 	# Simple Tree: open lowland canopy, dry or average moisture
 	if h < 2.4 and moist < 0.5:

@@ -19,11 +19,16 @@ func _init() -> void:
 	
 	var collision = CollisionShape3D.new()
 	var shape = CapsuleShape3D.new()
-	shape.radius = 0.4
+	shape.radius = 0.5
 	shape.height = 1.8
 	collision.shape = shape
 	collision.position = Vector3(0, 0.9, 0)
 	add_child(collision)
+	
+	# Prevent sinking at terrain step edges but don't snap into water dips
+	floor_snap_length  = 0.2
+	floor_max_angle    = deg_to_rad(50.0)
+	safe_margin        = 0.02
 	
 func _ready() -> void:
 	var glb = load("res://assets/man.glb").instantiate()

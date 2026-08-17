@@ -3,7 +3,7 @@ class_name VegetationData
 # ─── Species IDs ──────────────────────────────────────────────────────────────
 # Four distinct species using the new GLB assets from assets/trees/
 const PINE      := 0  # Pine Tree.glb
-const BIRCH     := 1  # Birch Tree.glb
+const APPLE_TREE:= 1  # Birch Tree.glb (Repurposed as Apple Tree)
 const SIMPLE    := 2  # Simple Tree.glb
 const STYLIZED  := 3  # Stylized Tree.glb
 const BUSH_A    := 4  # Bush by Jarlan Perez
@@ -16,7 +16,7 @@ const ROCK_C    := 8  # Rocks by Quaternius
 # Stores LOGICAL data only — no Transform3D.
 # The renderer rebuilds transforms deterministically from (species, local_x, local_z)
 # + a height lookup from ChunkData. This keeps save files tiny.
-var species:  PackedByteArray     # species ID per tree (PINE / BIRCH / SIMPLE / STYLIZED)
+var species:  PackedByteArray     # species ID per tree (PINE / APPLE_TREE / SIMPLE / STYLIZED)
 var local_xs: PackedFloat32Array  # local X within chunk (0.0 – CHUNK_SIZE)
 var local_zs: PackedFloat32Array  # local Z within chunk (0.0 – CHUNK_SIZE)
 

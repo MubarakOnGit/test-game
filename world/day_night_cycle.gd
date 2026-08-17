@@ -7,6 +7,9 @@ var time_of_day: float = 10.0
 ## Multiplier: 1.0 = real-time, 10.0 = 10× faster, 0.0 = paused.
 var time_speed: float = 1.0
 
+static var game_time: float = 0.0
+static var current_speed: float = 1.0
+
 # ─── References (assigned by WorldManager) ────────────────────────────────────
 var sun:     DirectionalLight3D
 var moon:    DirectionalLight3D
@@ -29,8 +32,12 @@ const SKY_KEYS := [
 
 # ─── Process ───────────────────────────────────────────────────────────────────
 func _process(delta: float) -> void:
-	# Advance time: time_speed=1 → 0.1 real seconds per in-game second
-	time_of_day += time_speed * delta * 0.1
+	current_speed = time_speed
+	game_time += delta * time_speed
+	
+	# Advance time: 1 in-game day (24h) = 5 real minutes (300 seconds)
+	# So hours per real second = 24.0 / 300.0 = 0.08
+	time_of_day += (24.0 / 300.0) * time_speed * delta
 	if time_of_day >= 24.0:
 		time_of_day -= 24.0
 	_apply()

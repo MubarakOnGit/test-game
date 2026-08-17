@@ -4,8 +4,20 @@ extends Control
 var chunk_manager: ChunkManager
 var _bounds_visible := false
 
+# Apple debug label
+var _apple_label: Label
+
 func _ready() -> void:
 	name = "DebugOverlay"
+	# Apple debug label — always visible
+	_apple_label = Label.new()
+	_apple_label.position = Vector2(16, 16)
+	_apple_label.add_theme_font_size_override("font_size", 16)
+	_apple_label.add_theme_color_override("font_color", Color(1, 1, 0.2))
+	_apple_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
+	_apple_label.add_theme_constant_override("shadow_offset_x", 2)
+	_apple_label.add_theme_constant_override("shadow_offset_y", 2)
+	add_child(_apple_label)
 	
 func setup(cm: ChunkManager) -> void:
 	chunk_manager = cm
@@ -17,6 +29,19 @@ func _input(event: InputEvent) -> void:
 			queue_redraw()
 
 func _process(delta: float) -> void:
+	# Count active apples and nearby apple trees across all chunks
+	var active_apples := 0
+	var apple_trees := 0
+	if chunk_manager:
+		for node: ChunkNode in chunk_manager._active_nodes.values():
+			apple_trees += node.apple_tree_positions.size()
+			for child in node.animals_container.get_children():
+				if child is Apple:
+					active_apples += 1
+	_apple_label.text = "🍎 Apples Dropped: %d\n🌳 Apple Trees (loaded): %d\n🟡 Apples on ground: %d" % [
+		ChunkNode.total_apples_dropped, apple_trees, active_apples
+	]
+	
 	if _bounds_visible:
 		queue_redraw()
 

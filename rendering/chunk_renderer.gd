@@ -56,21 +56,34 @@ static func commit(node: ChunkNode, data: ChunkData, terrain_arrays, water_array
 			node.outline_mesh_instance.material_override = _outline_material
 			node.outline_mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			
-			# 3. Collision (HeightMapShape3D)
-			var shape := HeightMapShape3D.new()
-			shape.map_width = ChunkData.BSIZE
-			shape.map_depth = ChunkData.BSIZE
-			shape.map_data  = data.heights
-			var offset_x = (float(ChunkData.BSIZE) / 2.0 - ChunkData.BORDER - 0.5) * ChunkData.TILE_SIZE
-			var offset_z = (float(ChunkData.BSIZE) / 2.0 - ChunkData.BORDER - 0.5) * ChunkData.TILE_SIZE
+			# 3. Collision — ConcavePolygonShape3D built from the ACTUAL mesh vertices.
+			# 
+			# WHY NOT HeightMapShape3D:
+			# Godot's HeightMapShape3D bilinearly interpolates between height samples,
+			# producing a smooth ramp at tile edges. Our visual mesh uses FLAT quads
+			# (each tile is one height). At river banks and cliff edges the collision
+			# surface ends up below or above the visual surface, causing sinking/floating.
+			#
+			# ConcavePolygonShape3D uses the exact triangles from the mesh, so collision
+			# is guaranteed to match what the player sees — no interpolation gap.
 			
+			var trimesh_points := PackedVector3Array()
+			var verts: PackedVector3Array = terrain_arrays.vertices
+			var idxs: PackedInt32Array    = terrain_arrays.indices
+			trimesh_points.resize(idxs.size())
+			for ti in idxs.size():
+				trimesh_points[ti] = verts[idxs[ti]]
+			
+			var trimesh := ConcavePolygonShape3D.new()
+			trimesh.set_faces(trimesh_points)
+			
+			# Clear only terrain collision (not trunk colliders)
 			for child in node.static_body.get_children():
-				child.free()
+				if not child.has_meta("trunk_collider"):
+					child.queue_free()
 			
 			var collision_shape := CollisionShape3D.new()
-			collision_shape.shape = shape
-			collision_shape.scale = Vector3(ChunkData.TILE_SIZE, 1.0, ChunkData.TILE_SIZE)
-			collision_shape.position = Vector3(offset_x, 0, offset_z)
+			collision_shape.shape = trimesh
 			node.static_body.add_child(collision_shape)
 			
 		node.rendered_terrain_version = data.metadata.terrain_version
@@ -95,9 +108,10 @@ static func commit(node: ChunkNode, data: ChunkData, terrain_arrays, water_array
 			
 		node.rendered_water_version = data.metadata.water_version
 	
-	# 4. Vegetation, Animals, and Grass
+	# 4. Vegetation, Animals, Grass, Flowers
 	if data.metadata.vegetation_version > node.rendered_vegetation_version:
 		VegetationRenderer.commit(node, data)
 		AnimalRenderer.commit(node, data)
 		GrassRenderer.commit(node, data)
+		FlowerRenderer.commit(node, data)
 		node.rendered_vegetation_version = data.metadata.vegetation_version

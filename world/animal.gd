@@ -37,10 +37,15 @@ func _ready() -> void:
 
 	var coll_shape := CollisionShape3D.new()
 	var sphere := SphereShape3D.new()
-	sphere.radius = 0.5
+	sphere.radius = 0.65
 	coll_shape.shape = sphere
-	coll_shape.position = Vector3(0, 0.5, 0)
+	coll_shape.position = Vector3(0, 0.65, 0)
 	add_child(coll_shape)
+	
+	# Prevent sinking at terrain tile step edges (not river dips)
+	floor_snap_length = 0.2
+	floor_max_angle   = deg_to_rad(50.0)
+	safe_margin       = 0.02
 	
 	_ahead_ray = RayCast3D.new()
 	_ahead_ray.target_position = Vector3(0, -20, 0)

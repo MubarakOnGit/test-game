@@ -14,7 +14,7 @@ static var _rock_c_mesh:   Mesh = null  # Rock C
 # ─── Per-species scale ranges for natural size variation ──────────────────────
 # [min_scale, max_scale] — randomized per instance using position hash
 const _PINE_SCALE     := [4.2, 6.6]   # Tall narrow conifers, medium variance
-const _BIRCH_SCALE    := [3.6, 5.7]   # Slender birches, moderate height
+const _APPLE_TREE_SCALE    := [3.6, 5.7]   # Apple trees, moderate height
 const _SIMPLE_SCALE   := [3.2, 5.6]   # Broad canopy, most size diversity
 const _STYLIZED_SCALE := [2.6, 4.0]   # Mixed mid-elevation trees
 const _BUSH_A_SCALE   := [0.05, 0.15]   # Small bushes
@@ -87,7 +87,7 @@ static func commit(node: ChunkNode, data: ChunkData) -> void:
 
 	# Count instances per species
 	var pine_count     := veg.count_of(VegetationData.PINE)
-	var birch_count    := veg.count_of(VegetationData.BIRCH)
+	var apple_tree_count    := veg.count_of(VegetationData.APPLE_TREE)
 	var simple_count   := veg.count_of(VegetationData.SIMPLE)
 	var stylized_count := veg.count_of(VegetationData.STYLIZED)
 	var bush_a_count   := veg.count_of(VegetationData.BUSH_A)
@@ -97,7 +97,7 @@ static func commit(node: ChunkNode, data: ChunkData) -> void:
 	var rock_c_count   := veg.count_of(VegetationData.ROCK_C)
 
 	_setup_multimesh(node.pine_multimesh,     pine_count,     _pine_mesh)
-	_setup_multimesh(node.birch_multimesh,    birch_count,    _birch_mesh)
+	_setup_multimesh(node.birch_multimesh,    apple_tree_count,    _birch_mesh)
 	_setup_multimesh(node.simple_multimesh,   simple_count,   _simple_mesh)
 	_setup_multimesh(node.stylized_multimesh, stylized_count, _stylized_mesh)
 	_setup_multimesh(node.bush_a_multimesh,   bush_a_count,   _bush_a_mesh)
@@ -115,6 +115,11 @@ static func commit(node: ChunkNode, data: ChunkData) -> void:
 	var rock_a_idx   := 0
 	var rock_b_idx   := 0
 	var rock_c_idx   := 0
+
+	# Clear previous tree/rock trunk colliders (tagged so we don't wipe terrain collision)
+	for child in node.static_body.get_children():
+		if child.has_meta("trunk_collider"):
+			child.queue_free()
 
 	for i in veg.count():
 		var sp := veg.species[i]
@@ -155,18 +160,23 @@ static func commit(node: ChunkNode, data: ChunkData) -> void:
 			VegetationData.PINE:
 				if node.pine_multimesh.multimesh != null:
 					node.pine_multimesh.multimesh.set_instance_transform(pine_idx, t)
+					_add_trunk_collider(node, pos, scale * 0.50, scale * 3.5)
 				pine_idx += 1
-			VegetationData.BIRCH:
+			VegetationData.APPLE_TREE:
 				if node.birch_multimesh.multimesh != null:
 					node.birch_multimesh.multimesh.set_instance_transform(birch_idx, t)
+					node.apple_tree_positions.append(pos)
+					_add_trunk_collider(node, pos, scale * 0.45, scale * 3.0)
 				birch_idx += 1
 			VegetationData.SIMPLE:
 				if node.simple_multimesh.multimesh != null:
 					node.simple_multimesh.multimesh.set_instance_transform(simple_idx, t)
+					_add_trunk_collider(node, pos, scale * 0.55, scale * 2.8)
 				simple_idx += 1
 			VegetationData.STYLIZED:
 				if node.stylized_multimesh.multimesh != null:
 					node.stylized_multimesh.multimesh.set_instance_transform(stylized_idx, t)
+					_add_trunk_collider(node, pos, scale * 0.45, scale * 2.5)
 				stylized_idx += 1
 			VegetationData.BUSH_A:
 				if node.bush_a_multimesh.multimesh != null:
@@ -189,6 +199,23 @@ static func commit(node: ChunkNode, data: ChunkData) -> void:
 					node.rock_c_multimesh.multimesh.set_instance_transform(rock_c_idx, t)
 				rock_c_idx += 1
 
+	# Start apple dropping now that all positions are known
+	node.begin_apple_drops()
+
+## Adds a cylinder collision shape to the chunk's static_body at a tree trunk position.
+## Tagged with "trunk_collider" meta so it can be cleared on chunk reset.
+## NOTE: pos is LOCAL to the chunk node (not world space), so we use it directly.
+static func _add_trunk_collider(node: ChunkNode, pos: Vector3, radius: float, height: float) -> void:
+	var cs := CollisionShape3D.new()
+	var cyl := CylinderShape3D.new()
+	cyl.radius = radius
+	cyl.height = height
+	cs.shape = cyl
+	# pos is local to the chunk, static_body sits at chunk origin, so use pos directly
+	cs.position = Vector3(pos.x, pos.y + height * 0.5, pos.z)
+	cs.set_meta("trunk_collider", true)
+	node.static_body.add_child(cs)
+
 # ─── Per-species scale helpers ────────────────────────────────────────────────
 
 ## Returns a scale value randomized within the species' natural size range.
@@ -198,8 +225,8 @@ static func _instance_scale(sp: int, pos: Vector3) -> float:
 	match sp:
 		VegetationData.PINE:
 			return lerpf(_PINE_SCALE[0],     _PINE_SCALE[1],     t)
-		VegetationData.BIRCH:
-			return lerpf(_BIRCH_SCALE[0],    _BIRCH_SCALE[1],    t)
+		VegetationData.APPLE_TREE:
+			return lerpf(_APPLE_TREE_SCALE[0],    _APPLE_TREE_SCALE[1],    t)
 		VegetationData.SIMPLE:
 			return lerpf(_SIMPLE_SCALE[0],   _SIMPLE_SCALE[1],   t)
 		VegetationData.STYLIZED:
@@ -220,7 +247,7 @@ static func _instance_scale(sp: int, pos: Vector3) -> float:
 static func _height_ratio(sp: int) -> float:
 	match sp:
 		VegetationData.PINE:     return 1.35   # Tall narrow conifer silhouette
-		VegetationData.BIRCH:    return 1.20   # Moderately tall and slender
+		VegetationData.APPLE_TREE:    return 1.20   # Moderately tall and slender
 		VegetationData.SIMPLE:   return 0.90   # Broad wide canopy
 		VegetationData.STYLIZED: return 1.10   # Balanced mixed-forest shape
 		VegetationData.BUSH_A:   return 1.00
@@ -235,7 +262,7 @@ static func _height_ratio(sp: int) -> float:
 static func _get_mesh_for_species(sp: int) -> Mesh:
 	match sp:
 		VegetationData.PINE: return _pine_mesh
-		VegetationData.BIRCH: return _birch_mesh
+		VegetationData.APPLE_TREE: return _birch_mesh
 		VegetationData.SIMPLE: return _simple_mesh
 		VegetationData.STYLIZED: return _stylized_mesh
 		VegetationData.BUSH_A: return _bush_a_mesh
