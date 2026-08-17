@@ -5,13 +5,13 @@ varying vec3 world_pos;
 varying vec4 v_color;
 
 const vec3 grass_colors[7] = vec3[](
-	vec3(0.494, 0.776, 0.157), // #7ec628
-	vec3(0.427, 0.710, 0.125), // #6db520
-	vec3(0.553, 0.831, 0.188), // #8dd430
-	vec3(0.369, 0.627, 0.094), // #5ea018
-	vec3(0.569, 0.847, 0.196), // #91d832
-	vec3(0.447, 0.753, 0.141), // #72c024
-	vec3(0.608, 0.878, 0.251)  // #9be040
+	vec3(0.329, 0.620, 0.118), // #549e1e  mid grass
+	vec3(0.278, 0.549, 0.094), // #478c18  slightly darker
+	vec3(0.388, 0.678, 0.149), // #63ad26  bright patch
+	vec3(0.251, 0.490, 0.082), // #407d15  deep meadow
+	vec3(0.420, 0.710, 0.165), // #6bb52a  lush highlight
+	vec3(0.298, 0.580, 0.110), // #4c9420  cool green
+	vec3(0.357, 0.647, 0.133)  // #5ba522  neutral mid
 );
 
 const vec3 dirt_colors[4] = vec3[](
@@ -83,11 +83,12 @@ void fragment() {
 
 	vec3 albedo;
 	
-	// Create a unique cell ID based on the block's X/Z world position
-	vec2 cell = floor(world_pos.xz);
+	// Snap to block grid (TILE_SIZE = 3.0) — ensures entire voxel face is one solid color
+	vec2 block_id = floor(world_pos.xz / 3.0);
 	
-	// Sample value noise at a low frequency to create large patches of color
-	float patch_val = noise(cell * 0.08);
+	// Sample value noise using block coordinates (not world coords)
+	// so each block gets a stable unique value regardless of tile size
+	float patch_val = noise(block_id * 0.25);
 
 	if (is_top) {
 		// Top face - color determined by biome
@@ -96,11 +97,10 @@ void fragment() {
 			// with a large-scale meadow gradient for a beautiful meadow look.
 			int base_idx = int(patch_val * 6.99); // 0 to 6 per-block variation
 			
-			// Meadow blend: large sweeping patches of lush vs dry grass
-			float mblend = meadow_blend(world_pos.xz);
-			// Lime-green end (indices 0,4,6) vs Yellow-green end (indices 2,5)
-			vec3 lush_col = mix(grass_colors[0], grass_colors[4], patch_val); // bright lime
-			vec3 dry_col  = mix(grass_colors[5], grass_colors[2], patch_val); // dark/muted green
+			// Meadow blend using block_id — large sweeping patches between lush/dry grass
+			float mblend = noise(block_id * 0.04);
+			vec3 lush_col = mix(grass_colors[0], grass_colors[6], patch_val);
+			vec3 dry_col  = mix(grass_colors[3], grass_colors[1], patch_val);
 			albedo = mix(lush_col, dry_col, mblend);
 		} else if (biome < 1.5) {
 			int idx = int(patch_val * 2.99); // 0 to 2
@@ -115,24 +115,17 @@ void fragment() {
 		float dist_from_top = v_color.g - world_pos.y;
 		
 		// ─── SIDE faces ───
-		// Stratified bands matching original prototype logic
-		if (dist_from_top < 0.12) {
-			// Top sliver — matches surface type EXCEPT grass (grass is only on top face)
+		// Stratified bands — thresholds are in world Y units, not block units
+		int dirt_idx = int(patch_val * 3.99);
+		if (dist_from_top < 0.4) {
+			// Top sliver — matches surface type (grass shows dirt on side)
 			if (biome > 2.5) albedo = snow_color;
 			else if (biome > 1.5) albedo = rock_colors[0];
 			else if (biome > 0.5) albedo = sand_colors[0];
-			else {
-				// Grass biome: side shows dirt, not green — green is top-face only
-				int idx = int(patch_val * 3.99);
-				albedo = dirt_colors[idx];
-			}
-		} else if (dist_from_top < 0.85) {
-			// Dirt band
-			int idx = int(patch_val * 3.99);
-			albedo = dirt_colors[idx];
+			else albedo = dirt_colors[dirt_idx];
 		} else {
-			// Rock base
-			albedo = rock_colors[1];
+			// Deep stratum — always rock/dirt mix
+			albedo = mix(dirt_colors[dirt_idx], rock_colors[1], clamp((dist_from_top - 0.4) * 0.5, 0.0, 1.0));
 		}
 		
 	}

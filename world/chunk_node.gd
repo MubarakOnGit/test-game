@@ -15,6 +15,9 @@ var rose_bush_multimesh:   MultiMeshInstance3D  # Rose Bush
 var rock_a_multimesh:      MultiMeshInstance3D  # Rock A
 var rock_b_multimesh:      MultiMeshInstance3D  # Rock B
 var rock_c_multimesh:      MultiMeshInstance3D  # Rock C
+var grass_multimesh:       MultiMeshInstance3D  # Grass variation A - short/young
+var grass_multimesh_b:     MultiMeshInstance3D  # Grass variation B - medium/thick
+var grass_multimesh_c:     MultiMeshInstance3D  # Grass variation C - tall/old
 var animals_container:     Node3D               # Container for dynamic animals
 var static_body:           StaticBody3D         # merged terrain collision
 
@@ -38,6 +41,9 @@ func _init() -> void:
 	rock_a_multimesh     = MultiMeshInstance3D.new()
 	rock_b_multimesh     = MultiMeshInstance3D.new()
 	rock_c_multimesh     = MultiMeshInstance3D.new()
+	grass_multimesh      = MultiMeshInstance3D.new()
+	grass_multimesh_b    = MultiMeshInstance3D.new()
+	grass_multimesh_c    = MultiMeshInstance3D.new()
 	animals_container    = Node3D.new()
 	static_body          = StaticBody3D.new()
 
@@ -53,6 +59,9 @@ func _init() -> void:
 	rock_a_multimesh.name     = "RocksA"
 	rock_b_multimesh.name     = "RocksB"
 	rock_c_multimesh.name     = "RocksC"
+	grass_multimesh.name      = "GrassTuftsA"
+	grass_multimesh_b.name    = "GrassTuftsB"
+	grass_multimesh_c.name    = "GrassTuftsC"
 	animals_container.name    = "Animals"
 	static_body.name          = "Collision"
 
@@ -68,6 +77,9 @@ func _init() -> void:
 	add_child(rock_a_multimesh)
 	add_child(rock_b_multimesh)
 	add_child(rock_c_multimesh)
+	add_child(grass_multimesh)
+	add_child(grass_multimesh_b)
+	add_child(grass_multimesh_c)
 	add_child(animals_container)
 	add_child(static_body)
 
@@ -85,6 +97,9 @@ func reset() -> void:
 	rock_a_multimesh.multimesh    = null
 	rock_b_multimesh.multimesh    = null
 	rock_c_multimesh.multimesh    = null
+	grass_multimesh.multimesh     = null
+	grass_multimesh_b.multimesh   = null
+	grass_multimesh_c.multimesh   = null
 
 	# Free any collision shapes from previous use
 	for child in static_body.get_children():

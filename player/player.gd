@@ -97,6 +97,9 @@ func _physics_process(delta: float) -> void:
 
 	move_and_slide()
 	
+	# Push our position to the grass shader so nearby tufts bend away
+	GrassRenderer.update_entities([global_position])
+	
 	_handle_water_ripples(direction != Vector3.ZERO)
 
 enum WaterState { LAND, IN_WATER }

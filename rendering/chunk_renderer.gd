@@ -95,8 +95,9 @@ static func commit(node: ChunkNode, data: ChunkData, terrain_arrays, water_array
 			
 		node.rendered_water_version = data.metadata.water_version
 	
-	# 4. Vegetation and Animals
+	# 4. Vegetation, Animals, and Grass
 	if data.metadata.vegetation_version > node.rendered_vegetation_version:
 		VegetationRenderer.commit(node, data)
 		AnimalRenderer.commit(node, data)
+		GrassRenderer.commit(node, data)
 		node.rendered_vegetation_version = data.metadata.vegetation_version
