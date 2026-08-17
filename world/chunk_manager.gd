@@ -6,6 +6,7 @@ const MAX_UPLOADS_PER_FRAME := 2
 
 var database: WorldDatabase
 var world_seed: int
+var player_node: Node3D = null  # Set by WorldManager after player is spawned
 
 var _pool: Array[ChunkNode] = []
 var _active_nodes: Dictionary = {} # Vector2i -> ChunkNode
@@ -54,6 +55,7 @@ func tick_uploads() -> void:
 		# Commit to node
 		ChunkRenderer.commit(node, data, terrain_arrays, water_arrays)
 		
+		node.player_ref = player_node
 		node.visible = true
 		_active_nodes[node.chunk_key] = node
 		data.metadata.state = ChunkMetadata.State.VISIBLE

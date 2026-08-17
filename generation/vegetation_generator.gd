@@ -4,6 +4,7 @@ class_name VegetationGenerator
 static var _tree_noise:    FastNoiseLite = null  # Forest density / clustering
 static var _species_noise: FastNoiseLite = null  # Species selection gradient
 static var _jitter_noise:  FastNoiseLite = null  # Extra scatter at patch edges
+static var _bush_noise:    FastNoiseLite = null  # Berry bush density
 static var _initialized:   bool = false
 
 static func _ensure_init(world_seed: int) -> void:
@@ -28,6 +29,12 @@ static func _ensure_init(world_seed: int) -> void:
 	_jitter_noise.seed = world_seed + 2023
 	_jitter_noise.noise_type = FastNoiseLite.TYPE_VALUE
 	_jitter_noise.frequency = 0.15
+
+	# Berry bush density — separate cluster pattern from trees
+	_bush_noise = FastNoiseLite.new()
+	_bush_noise.seed = world_seed + 4444
+	_bush_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	_bush_noise.frequency = 0.09
 
 ## Populates data.vegetation with diverse, biome-aware tree placements.
 static func generate(data: ChunkData, world_seed: int) -> void:
@@ -71,6 +78,29 @@ static func generate(data: ChunkData, world_seed: int) -> void:
 			var off_x := clampf(scatter * 0.15, -0.15, 0.15)
 			var off_z := clampf(density  * 0.15, -0.15, 0.15)
 			data.vegetation.add(species, float(lx) + 0.5 + off_x, float(lz) + 0.5 + off_z)
+
+	# ─── Berry Bush Pass ────────────────────────────────────────────────────────
+	# Separate cell grid (cell_size=3 = denser than trees), grass only, not too close to water
+	for lz in range(cs):
+		for lx in range(cs):
+			var bidx := ChunkData.bi(lx, lz)
+			var hidx := ChunkData.hi(lx, lz)
+			var biome := data.biomes[bidx]
+			if biome != 0:
+				continue
+			var h := data.heights[hidx]
+			if h <= ChunkData.SEA_LEVEL or data.water_levels[hidx] > 0.0:
+				continue
+			var world_x := data.cx * cs + lx
+			var world_z := data.cz * cs + lz
+			# Use a 5-tile jittered grid (same spacing as trees)
+			if not _is_tree_candidate(world_x, world_z, world_seed + 9999, 5):
+				continue
+			var bush_density := _bush_noise.get_noise_2d(float(world_x), float(world_z))
+			# Higher threshold = fewer bushes (0.3 is quite sparse)
+			if bush_density < 0.3:
+				continue
+			data.vegetation.add_berry_bush(float(lx) + 0.5, float(lz) + 0.5)
 
 # ─── Species Selection ────────────────────────────────────────────────────────
 

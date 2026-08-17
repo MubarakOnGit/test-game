@@ -20,6 +20,8 @@ var grass_multimesh_b:     MultiMeshInstance3D  # Grass variation B - medium/thi
 var grass_multimesh_c:     MultiMeshInstance3D  # Grass variation C - tall/old
 var flower_multimesh:      MultiMeshInstance3D  # Pixel flowers
 var apple_ground_multimesh: MultiMeshInstance3D # Static settled apples (cheap MultiMesh)
+var berry_full_multimesh:  MultiMeshInstance3D  # Berry bushes with berries
+var berry_empty_multimesh: MultiMeshInstance3D  # Berry bushes without berries
 var animals_container:     Node3D               # Container for dynamic animals
 var static_body:           StaticBody3D         # merged terrain collision
 
@@ -28,6 +30,15 @@ var apple_tree_index:      int = 0               # Cycles through trees in order
 var apple_spawn_timer:     float = -1.0
 var apple_ground_positions: PackedVector3Array = PackedVector3Array()
 var apple_ground_times: PackedFloat32Array = PackedFloat32Array()
+
+# Berry bush state — parallel arrays indexed per bush
+var berry_positions:     Array[Vector3] = []     # Local-space positions of berry bushes
+var berry_has_berry:     PackedByteArray = PackedByteArray()  # 1 = has berry, 0 = bare
+var berry_respawn_times: PackedFloat32Array = PackedFloat32Array() # game_time when picked
+var berry_colors:        PackedByteArray = PackedByteArray()  # 0 = red, 1 = violet (deterministic)
+
+## Reference to the player set by WorldManager
+var player_ref: Node3D = null
 
 ## Global counter incremented every time any chunk drops an apple (used by DebugOverlay)
 static var total_apples_dropped: int = 0
@@ -57,6 +68,8 @@ func _init() -> void:
 	grass_multimesh_c    = MultiMeshInstance3D.new()
 	flower_multimesh     = MultiMeshInstance3D.new()
 	apple_ground_multimesh = MultiMeshInstance3D.new()
+	berry_full_multimesh = MultiMeshInstance3D.new()
+	berry_empty_multimesh = MultiMeshInstance3D.new()
 	animals_container    = Node3D.new()
 	static_body          = StaticBody3D.new()
 
@@ -77,6 +90,8 @@ func _init() -> void:
 	grass_multimesh_c.name    = "GrassTuftsC"
 	flower_multimesh.name         = "Flowers"
 	apple_ground_multimesh.name   = "AppleGround"
+	berry_full_multimesh.name     = "BerryFull"
+	berry_empty_multimesh.name    = "BerryEmpty"
 	animals_container.name        = "Animals"
 	static_body.name          = "Collision"
 
@@ -97,6 +112,8 @@ func _init() -> void:
 	add_child(grass_multimesh_c)
 	add_child(flower_multimesh)
 	add_child(apple_ground_multimesh)
+	add_child(berry_full_multimesh)
+	add_child(berry_empty_multimesh)
 	add_child(animals_container)
 	add_child(static_body)
 	
@@ -121,10 +138,16 @@ func reset() -> void:
 	grass_multimesh_c.multimesh   = null
 	flower_multimesh.multimesh      = null
 	apple_ground_multimesh.multimesh = null
+	berry_full_multimesh.multimesh  = null
+	berry_empty_multimesh.multimesh = null
 	apple_tree_positions.clear()
 	apple_ground_positions.clear()
 	apple_ground_times.clear()
 	apple_spawn_timer = -1.0
+	berry_positions.clear()
+	berry_has_berry.clear()
+	berry_respawn_times.clear()
+	berry_colors.clear()
 
 	# Free any collision shapes from previous use
 	for child in static_body.get_children():
@@ -271,3 +294,88 @@ func _process(delta: float) -> void:
 			
 	if needs_rebuild:
 		_rebuild_ground_apple_mesh()
+
+	# ── Berry Bush Pickup & Respawn ──────────────────────────────────────────
+	if berry_positions.is_empty():
+		return
+
+	var berry_changed := false
+	var player_local_pos := Vector3.ZERO
+	var player_valid := player_ref != null and is_instance_valid(player_ref)
+	if player_valid:
+		# Convert player world pos to this chunk's local space
+		player_local_pos = player_ref.global_position - global_position
+
+	for i in berry_positions.size():
+		if berry_has_berry[i] == 1:
+			# Check player proximity for pickup
+			if player_valid:
+				var dist_sq: float = (player_local_pos - berry_positions[i]).length_squared()
+				if dist_sq < 2.25:  # 1.5 units radius squared
+					berry_has_berry[i] = 0
+					berry_respawn_times[i] = now
+					berry_changed = true
+		else:
+			# Respawn check — 1 in-game day (300 game-time seconds)
+			if now - berry_respawn_times[i] >= 300.0:
+				berry_has_berry[i] = 1
+				berry_changed = true
+
+	if berry_changed:
+		_rebuild_berry_meshes()
+
+## Rebuilds the two berry bush MultiMeshes (full and empty) from current berry state.
+func _rebuild_berry_meshes() -> void:
+	if berry_positions.is_empty():
+		return
+
+	var full_mesh:  Mesh = VegetationRenderer._berry_full_mesh
+	var empty_mesh: Mesh = VegetationRenderer._berry_empty_mesh
+	if full_mesh == null or empty_mesh == null:
+		return
+
+	var full_count  := 0
+	var empty_count := 0
+	for i in berry_positions.size():
+		if berry_has_berry[i] == 1:
+			full_count  += 1
+		else:
+			empty_count += 1
+
+	# Build full-berry MultiMesh
+	if full_count > 0:
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.instance_count   = full_count
+		mm.mesh             = full_mesh
+		var fi := 0
+		for i in berry_positions.size():
+			if berry_has_berry[i] == 1:
+				var p   := berry_positions[i]
+				var rot := float(hash(p)) / 2147483647.0 * TAU
+				var b   := Basis.from_euler(Vector3(0, rot, 0)).scaled(Vector3(1.5, 1.5, 1.5))
+				mm.set_instance_transform(fi, Transform3D(b, p))
+				fi += 1
+		berry_full_multimesh.multimesh    = mm
+		berry_full_multimesh.custom_aabb  = AABB(Vector3(-1000, -1000, -1000), Vector3(2000, 2000, 2000))
+	else:
+		berry_full_multimesh.multimesh = null
+
+	# Build empty-berry MultiMesh
+	if empty_count > 0:
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.instance_count   = empty_count
+		mm.mesh             = empty_mesh
+		var ei := 0
+		for i in berry_positions.size():
+			if berry_has_berry[i] == 0:
+				var p   := berry_positions[i]
+				var rot := float(hash(p)) / 2147483647.0 * TAU
+				var b   := Basis.from_euler(Vector3(0, rot, 0)).scaled(Vector3(1.5, 1.5, 1.5))
+				mm.set_instance_transform(ei, Transform3D(b, p))
+				ei += 1
+		berry_empty_multimesh.multimesh    = mm
+		berry_empty_multimesh.custom_aabb  = AABB(Vector3(-1000, -1000, -1000), Vector3(2000, 2000, 2000))
+	else:
+		berry_empty_multimesh.multimesh = null

@@ -10,6 +10,8 @@ static var _rose_bush_mesh:Mesh = null  # Rose Bush
 static var _rock_a_mesh:   Mesh = null  # Rock A
 static var _rock_b_mesh:   Mesh = null  # Rock B
 static var _rock_c_mesh:   Mesh = null  # Rock C
+static var _berry_full_mesh:  Mesh = null  # Berry bush WITH berries (built procedurally)
+static var _berry_empty_mesh: Mesh = null  # Berry bush WITHOUT berries (just leaves)
 
 # ─── Per-species scale ranges for natural size variation ──────────────────────
 # [min_scale, max_scale] — randomized per instance using position hash
@@ -42,6 +44,8 @@ static func _ensure_meshes() -> void:
 		_rock_b_mesh = _extract_mesh("res://assets/elements/Rocks by Don Carson - kCmxD1l2Qu.glb")
 	if _rock_c_mesh == null:
 		_rock_c_mesh = _extract_mesh("res://assets/elements/Rocks by Quaternius - OQvi8PIZ40.glb")
+	if _berry_full_mesh == null or _berry_empty_mesh == null:
+		_build_berry_meshes()
 
 ## Load a GLB scene and extract the first MeshInstance3D's mesh.
 ## Falls back to a simple box mesh if the GLB cannot be loaded or has no mesh.
@@ -78,6 +82,147 @@ static func _fallback_mesh() -> Mesh:
 	var bm := BoxMesh.new()
 	bm.size = Vector3(0.5, 2.0, 0.5)
 	return bm
+
+## Build berry bush meshes procedurally from BoxMesh primitives.
+## Shared mesh = shared draw call. No GLB assets needed.
+static func _build_berry_meshes() -> void:
+	# ── MagicaVoxel High-Res Sphere Design ────────────────────────────────────
+	# A 9x9x9 grid, culled into a perfect radius-4 sphere.
+	var voxel_size := 0.225
+	var half_size := Vector3(voxel_size * 0.5, voxel_size * 0.5, voxel_size * 0.5)
+	var radius := 4
+	var radius_sq := radius * radius
+	
+	var leaf_colors := [
+		Color("#365c27"), # Light dark green
+		Color("#2b4a1f"), # Mid dark green
+		Color("#203816"), # Deep dark green
+	]
+	var berry_colors := [
+		Color("#d93838"), # Red
+		Color("#4c3a99"), # Purple/Blue
+	]
+
+	var e_verts := PackedVector3Array()
+	var e_norms := PackedVector3Array()
+	var e_colors:= PackedColorArray()
+	var e_idxs  := PackedInt32Array()
+
+	var f_verts := PackedVector3Array()
+	var f_norms := PackedVector3Array()
+	var f_colors:= PackedColorArray()
+	var f_idxs  := PackedInt32Array()
+
+	# Shift up so the bottom of the sphere rests on the ground
+	var y_shift := float(radius) * voxel_size
+
+	for x in range(-radius, radius + 1):
+		for y in range(-radius, radius + 1):
+			for z in range(-radius, radius + 1):
+				var d_sq := x*x + y*y + z*z
+				# Cull outside the sphere
+				if d_sq > radius_sq:
+					continue
+					
+				var is_surface: bool = (d_sq >= (radius - 1) * (radius - 1))
+				var h: int = hash(str(x, "_", y, "_", z))
+				var h_abs: int = abs(h)
+				
+				# Texture the surface by randomly carving out 15% of the outer voxels
+				if is_surface:
+					if h_abs % 100 < 15:
+						continue
+						
+				var offset := Vector3(float(x) * voxel_size, float(y) * voxel_size + y_shift, float(z) * voxel_size)
+				
+				# Pick a green color
+				var leaf_col: Color = leaf_colors[h_abs % leaf_colors.size()]
+				
+				# Always add green to the empty bush
+				_add_box_to_arrays(e_verts, e_norms, e_colors, e_idxs, offset, half_size, leaf_col)
+				
+				# Add to the full bush
+				var is_berry := false
+				var berry_col: Color
+				if is_surface:
+					# 7% chance to be a berry if it's on the surface
+					var r: int = (h_abs / 100) % 100
+					if r < 7:
+						is_berry = true
+						if r < 4:
+							berry_col = berry_colors[0] # Red
+						else:
+							berry_col = berry_colors[1] # Purple/Blue
+							
+				if is_berry:
+					_add_box_to_arrays(f_verts, f_norms, f_colors, f_idxs, offset, half_size, berry_col)
+				else:
+					_add_box_to_arrays(f_verts, f_norms, f_colors, f_idxs, offset, half_size, leaf_col)
+
+	# Finalize Empty Mesh
+	var e_arrays := []
+	e_arrays.resize(Mesh.ARRAY_MAX)
+	e_arrays[Mesh.ARRAY_VERTEX] = e_verts
+	e_arrays[Mesh.ARRAY_NORMAL] = e_norms
+	e_arrays[Mesh.ARRAY_COLOR]  = e_colors
+	e_arrays[Mesh.ARRAY_INDEX]  = e_idxs
+	var empty_mesh := ArrayMesh.new()
+	empty_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, e_arrays)
+	var empty_mat := StandardMaterial3D.new()
+	empty_mat.vertex_color_use_as_albedo = true
+	empty_mat.roughness = 1.0
+	empty_mat.metallic  = 0.0
+	empty_mesh.surface_set_material(0, empty_mat)
+	_berry_empty_mesh = empty_mesh
+
+	# Finalize Full Mesh
+	var f_arrays := []
+	f_arrays.resize(Mesh.ARRAY_MAX)
+	f_arrays[Mesh.ARRAY_VERTEX] = f_verts
+	f_arrays[Mesh.ARRAY_NORMAL] = f_norms
+	f_arrays[Mesh.ARRAY_COLOR]  = f_colors
+	f_arrays[Mesh.ARRAY_INDEX]  = f_idxs
+	var full_mesh := ArrayMesh.new()
+	full_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, f_arrays)
+	var full_mat := StandardMaterial3D.new()
+	full_mat.vertex_color_use_as_albedo = true
+	full_mat.roughness = 1.0
+	full_mat.metallic  = 0.0
+	full_mesh.surface_set_material(0, full_mat)
+	_berry_full_mesh = full_mesh
+
+## Helper: appends a box's verts/norms/colors/indices into the given arrays.
+static func _add_box_to_arrays(
+		verts: PackedVector3Array, norms: PackedVector3Array,
+		colors: PackedColorArray, idxs: PackedInt32Array,
+		offset: Vector3, half_size: Vector3, color: Color) -> void:
+	var corners: Array[Vector3] = [
+		offset + Vector3(-half_size.x, -half_size.y, -half_size.z),
+		offset + Vector3( half_size.x, -half_size.y, -half_size.z),
+		offset + Vector3( half_size.x,  half_size.y, -half_size.z),
+		offset + Vector3(-half_size.x,  half_size.y, -half_size.z),
+		offset + Vector3(-half_size.x, -half_size.y,  half_size.z),
+		offset + Vector3( half_size.x, -half_size.y,  half_size.z),
+		offset + Vector3( half_size.x,  half_size.y,  half_size.z),
+		offset + Vector3(-half_size.x,  half_size.y,  half_size.z),
+	]
+	var faces: Array[Array] = [
+		[0,1,2,3], [5,4,7,6], [0,3,7,4],
+		[1,5,6,2], [3,2,6,7], [0,4,5,1]
+	]
+	var face_norms: Array[Vector3] = [
+		Vector3(0,0,-1), Vector3(0,0,1), Vector3(-1,0,0),
+		Vector3(1,0,0),  Vector3(0,1,0), Vector3(0,-1,0)
+	]
+	for fi in 6:
+		var face: Array  = faces[fi]
+		var n: Vector3   = face_norms[fi]
+		var base := verts.size()
+		for vi in 4:
+			verts.append(corners[face[vi]])
+			norms.append(n)
+			colors.append(color)
+		idxs.append_array([base, base+1, base+2, base, base+2, base+3])
 
 
 ## Populates the MultiMeshes in the ChunkNode based on VegetationData.
@@ -201,6 +346,21 @@ static func commit(node: ChunkNode, data: ChunkData) -> void:
 
 	# Start apple dropping now that all positions are known
 	node.begin_apple_drops()
+
+	# ── Berry Bush Commit ────────────────────────────────────────────────────
+	var bcount := veg.berry_bush_count()
+	for i in bcount:
+		var lx := veg.berry_local_xs[i]
+		var lz := veg.berry_local_zs[i]
+		var hidx := ChunkData.hi(int(lx), int(lz))
+		var y    := data.heights[hidx]
+		var local_pos := Vector3(lx * ChunkData.TILE_SIZE, y, lz * ChunkData.TILE_SIZE)
+		node.berry_positions.append(local_pos)
+		node.berry_has_berry.append(1)        # start with berries
+		node.berry_respawn_times.append(0.0)
+		node.berry_colors.append(abs(hash(local_pos)) % 2)  # 0=red, 1=violet
+	if bcount > 0:
+		node._rebuild_berry_meshes()
 
 ## Adds a cylinder collision shape to the chunk's static_body at a tree trunk position.
 ## Tagged with "trunk_collider" meta so it can be cleared on chunk reset.

@@ -250,3 +250,4 @@ func _setup_player() -> void:
 	player = Player.new()
 	player.position = Vector3(0, 15.0, 0) # Start high and drop in
 	add_child(player)
+	chunk_manager.player_node = player

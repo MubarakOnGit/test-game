@@ -20,6 +20,12 @@ var species:  PackedByteArray     # species ID per tree (PINE / APPLE_TREE / SIM
 var local_xs: PackedFloat32Array  # local X within chunk (0.0 – CHUNK_SIZE)
 var local_zs: PackedFloat32Array  # local Z within chunk (0.0 – CHUNK_SIZE)
 
+# ─── Berry Bush Placement Data ────────────────────────────────────────────────
+# Berry bushes are tracked separately because they have mutable berry state.
+# (local_x, local_z) within the chunk — height is looked up from ChunkData at render time.
+var berry_local_xs: PackedFloat32Array
+var berry_local_zs: PackedFloat32Array
+
 # ─── API ──────────────────────────────────────────────────────────────────────
 
 func count() -> int:
@@ -36,3 +42,10 @@ func count_of(sp: int) -> int:
 		if species[i] == sp:
 			n += 1
 	return n
+
+func add_berry_bush(lx: float, lz: float) -> void:
+	berry_local_xs.push_back(lx)
+	berry_local_zs.push_back(lz)
+
+func berry_bush_count() -> int:
+	return berry_local_xs.size()
