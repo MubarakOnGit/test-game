@@ -67,10 +67,14 @@ static func commit(node: ChunkNode, data: ChunkData) -> void:
 			
 		# Attach script and properties
 		instance.set_script(_animal_script)
+		instance.set("animal_type", a_data["type"])
 		instance.add_child(visual)
 		
 		instance.is_water_animal = a_data["is_water"]
 		instance.position = Vector3(a_data["x"] * ChunkData.TILE_SIZE, a_data["y"], a_data["z"] * ChunkData.TILE_SIZE)
+		# Restore hunger from snapshot if available
+		if a_data.has("hunger"):
+			instance.set("hunger", a_data["hunger"])
 		
 		# Add a small random rotation
 		instance.rotation.y = randf() * TAU

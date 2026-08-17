@@ -32,6 +32,11 @@ var fertilities: PackedFloat32Array   # 0.0–1.0
 var vegetation: VegetationData
 var animals: Array[Dictionary] = []
 
+# ─── Ecosystem State ──────────────────────────────────────────────────────────
+## game_time (seconds) when this chunk was last ecosystem-simulated.
+## -1 means it has never been simulated (fresh generation).
+var last_sim_time: float = -1.0
+
 # ─── Metadata ─────────────────────────────────────────────────────────────────
 var metadata: ChunkMetadata
 

@@ -379,3 +379,18 @@ func _rebuild_berry_meshes() -> void:
 		berry_empty_multimesh.custom_aabb  = AABB(Vector3(-1000, -1000, -1000), Vector3(2000, 2000, 2000))
 	else:
 		berry_empty_multimesh.multimesh = null
+
+# ─── Ecosystem Queries ────────────────────────────────────────────────────────
+
+func consume_apple(index: int) -> void:
+	if index >= 0 and index < apple_ground_positions.size():
+		apple_ground_positions.remove_at(index)
+		apple_ground_times.remove_at(index)
+		_rebuild_ground_apple_mesh()
+
+func consume_berry(index: int) -> void:
+	if index >= 0 and index < berry_has_berry.size():
+		if berry_has_berry[index] == 1:
+			berry_has_berry[index] = 0
+			berry_respawn_times[index] = DayNightCycle.game_time
+			_rebuild_berry_meshes()

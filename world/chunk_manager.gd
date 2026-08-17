@@ -25,6 +25,7 @@ func _init(db: WorldDatabase, w_seed: int) -> void:
 	
 	# Listen to chunk modifications
 	WorldEventBus.chunk_modified.connect(_on_chunk_modified)
+	add_to_group("chunk_manager")
 
 ## Main tick for the chunk streaming lifecycle.
 func tick(center_chunk: Vector2i) -> void:
@@ -52,6 +53,9 @@ func tick_uploads() -> void:
 			node.chunk_key = Vector2i(data.cx, data.cz)
 			node.position = Vector3(data.world_origin_x(), 0, data.world_origin_z())
 		
+		# Run catch-up simulation before spawning animals into the scene
+		EcosystemSimulator.catch_up(data)
+		
 		# Commit to node
 		ChunkRenderer.commit(node, data, terrain_arrays, water_arrays)
 		
@@ -75,6 +79,8 @@ func tick_cleanup(center_chunk: Vector2i) -> void:
 		var node: ChunkNode = _active_nodes[key]
 		var data := database.get_chunk(key)
 		if data:
+			# Snapshot live animal state before unloading
+			EcosystemSimulator.snapshot(data, node)
 			data.metadata.state = ChunkMetadata.State.SLEEPING
 		_return_pool_node(node)
 		_active_nodes.erase(key)
@@ -191,3 +197,61 @@ func _get_pool_node() -> ChunkNode:
 func _return_pool_node(node: ChunkNode) -> void:
 	node.reset()
 	_pool.push_back(node)
+
+# ─── Ecosystem Queries ────────────────────────────────────────────────────────
+
+func find_nearest_animal(global_pos: Vector3, radius: float, type: String) -> Node3D:
+	var closest: Node3D = null
+	var min_dist := radius
+	
+	for node in _active_nodes.values():
+		var dist = node.global_position.distance_to(global_pos)
+		if dist > radius + 20.0:
+			continue
+			
+		for child in node.animals_container.get_children():
+			if child is Animal and child.animal_type == type:
+				var d = child.global_position.distance_to(global_pos)
+				if d < min_dist:
+					min_dist = d
+					closest = child
+	return closest
+
+func find_nearest_food(global_pos: Vector3, radius: float) -> Dictionary:
+	var closest_dict: Dictionary = {}
+	var min_dist := radius
+	
+	for node in _active_nodes.values():
+		var dist = node.global_position.distance_to(global_pos)
+		if dist > radius + 20.0:
+			continue
+			
+		# Check apples
+		for i in range(node.apple_ground_positions.size()):
+			var wpos = node.global_position + node.apple_ground_positions[i]
+			var d = wpos.distance_to(global_pos)
+			if d < min_dist:
+				min_dist = d
+				closest_dict = {"chunk": node, "type": "apple", "index": i, "position": wpos}
+				
+		# Check berries
+		for i in range(node.berry_positions.size()):
+			if node.berry_has_berry[i]:
+				var wpos = node.global_position + node.berry_positions[i]
+				var d = wpos.distance_to(global_pos)
+				if d < min_dist:
+					min_dist = d
+					closest_dict = {"chunk": node, "type": "berry", "index": i, "position": wpos}
+					
+	return closest_dict
+
+func consume_food(food_dict: Dictionary) -> void:
+	if not food_dict.has("chunk") or not is_instance_valid(food_dict.chunk):
+		return
+	var chunk: ChunkNode = food_dict.chunk
+	if food_dict.type == "apple":
+		if chunk.has_method("consume_apple"):
+			chunk.consume_apple(food_dict.index)
+	elif food_dict.type == "berry":
+		if chunk.has_method("consume_berry"):
+			chunk.consume_berry(food_dict.index)

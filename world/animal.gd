@@ -2,18 +2,27 @@ extends CharacterBody3D
 class_name Animal
 
 # ─── Tuning ───────────────────────────────────────────────────────────────────
-const MAX_STEP_HEIGHT := 0.8   # Max height delta between tiles before rejecting direction
+const MAX_STEP_HEIGHT := 1.2   # Max height delta between tiles before rejecting direction
 const TURN_SPEED      := 3.0   # Radians/sec for smooth rotation lerp
 
 # ─── Per-animal Config ────────────────────────────────────────────────────────
+@export var animal_type: String = "" # e.g., "blocky_rabbit" or "wolf"
 @export var move_anim: String = "walk"  # Override per animal type (e.g. "run" for rabbit)
 
+# ─── AI Stats ─────────────────────────────────────────────────────────────────
+var hunger: float = 100.0
+var max_hunger: float = 100.0
+var hunger_decay_rate: float = 2.0 # Hunger lost per second
+
 # ─── State ────────────────────────────────────────────────────────────────────
-enum State { IDLE, WALK, RUN }
+enum State { IDLE, WALK, RUN, FLEE, SEEK_FOOD, EAT }
 
 var current_state: State = State.IDLE
 var state_timer: float = 0.0
+var _think_timer: float = 0.0
+
 var wander_direction: Vector3 = Vector3.ZERO
+var target_position: Vector3 = Vector3.ZERO # For SEEK_FOOD / EAT
 var walk_speed: float = 2.0
 var run_speed: float = 4.8
 var current_speed: float = 2.0
@@ -29,6 +38,7 @@ var anim_player: AnimationPlayer
 var _ahead_ray: RayCast3D
 var _visual: Node3D
 var _anim_tween: Tween
+var _chunk_manager = null # Assigned dynamically in _ready
 
 # ─── Lifecycle ────────────────────────────────────────────────────────────────
 
@@ -55,6 +65,8 @@ func _ready() -> void:
 		if child is Node3D and not child is CollisionShape3D and not child is RayCast3D and not child is AnimationPlayer:
 			_visual = child
 			break
+			
+	_chunk_manager = get_tree().get_first_node_in_group("chunk_manager")
 
 	target_rotation_y = rotation.y
 	_pick_new_state()
@@ -205,13 +217,29 @@ func _pick_new_state() -> void:
 # ─── Physics ──────────────────────────────────────────────────────────────────
 
 func _physics_process(delta: float) -> void:
+	hunger = maxf(0.0, hunger - hunger_decay_rate * delta)
+	
+	_think_timer -= delta
+	if _think_timer <= 0.0:
+		_think_timer = randf_range(0.4, 0.8)
+		_think()
+		
 	state_timer -= delta
-	if state_timer <= 0.0:
+	if state_timer <= 0.0 and current_state in [State.IDLE, State.WALK, State.RUN]:
 		_pick_new_state()
 
 	var is_in_water := global_position.y <= 0.0
 
-	if current_state == State.WALK or current_state == State.RUN:
+	if current_state in [State.WALK, State.RUN, State.FLEE, State.SEEK_FOOD]:
+		if current_state == State.SEEK_FOOD or current_state == State.FLEE:
+			var diff := target_position - global_position
+			diff.y = 0
+			if diff.length_squared() > 0.01:
+				wander_direction = diff.normalized()
+				if current_state == State.FLEE:
+					wander_direction = -wander_direction
+			target_rotation_y = atan2(wander_direction.x, wander_direction.z)
+			
 		velocity.x = wander_direction.x * current_speed
 		velocity.z = wander_direction.z * current_speed
 
@@ -234,8 +262,11 @@ func _physics_process(delta: float) -> void:
 			else:
 				if not is_on_floor():
 					velocity.y -= 9.8 * delta
+				elif is_on_wall():
+					global_position.y += current_speed * 1.5 * delta
+					velocity.y = 0.0
 	else:
-		# IDLE state
+		# IDLE or EAT state
 		velocity.x = move_toward(velocity.x, 0.0, walk_speed * 4.0 * delta)
 		velocity.z = move_toward(velocity.z, 0.0, walk_speed * 4.0 * delta)
 		if not is_water_animal and not is_on_floor():
@@ -245,9 +276,8 @@ func _physics_process(delta: float) -> void:
 
 	rotation.y = lerp_angle(rotation.y, target_rotation_y, delta * TURN_SPEED)
 
-	# Animation selection based on state
 	match current_state:
-		State.IDLE:
+		State.IDLE, State.EAT:
 			if anim_player:
 				anim_player.speed_scale = 1.0
 			_play_anim("idle")
@@ -255,9 +285,55 @@ func _physics_process(delta: float) -> void:
 			if anim_player:
 				anim_player.speed_scale = 1.0
 			_play_anim(move_anim if move_anim != "" else "walk")
-		State.RUN:
+		State.RUN, State.FLEE, State.SEEK_FOOD:
 			if anim_player:
 				anim_player.speed_scale = 1.0
 			_play_anim("run")
 
 	move_and_slide()
+
+func _think() -> void:
+	if not _chunk_manager:
+		return
+		
+	if animal_type == "blocky_rabbit":
+		var wolf = _chunk_manager.find_nearest_animal(global_position, 15.0, "wolf")
+		if wolf:
+			current_state = State.FLEE
+			current_speed = run_speed * 1.2
+			target_position = wolf.global_position
+			return
+			
+		if hunger < 50.0:
+			var food = _chunk_manager.find_nearest_food(global_position, 20.0)
+			if food:
+				var dist = global_position.distance_to(food.position)
+				if dist < 1.5:
+					_chunk_manager.consume_food(food)
+					hunger = max_hunger
+					current_state = State.EAT
+					state_timer = 2.0
+				else:
+					current_state = State.SEEK_FOOD
+					current_speed = run_speed
+					target_position = food.position
+				return
+				
+	elif animal_type == "wolf":
+		if hunger < 70.0:
+			var prey = _chunk_manager.find_nearest_animal(global_position, 25.0, "blocky_rabbit")
+			if prey:
+				var dist = global_position.distance_to(prey.global_position)
+				if dist < 1.8:
+					prey.queue_free()
+					hunger = max_hunger
+					current_state = State.EAT
+					state_timer = 3.0
+				else:
+					current_state = State.SEEK_FOOD
+					current_speed = run_speed * 1.1
+					target_position = prey.global_position
+				return
+
+	if current_state in [State.FLEE, State.SEEK_FOOD]:
+		_pick_new_state()
