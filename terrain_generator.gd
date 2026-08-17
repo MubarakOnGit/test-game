@@ -3,7 +3,7 @@ extends Node3D
 # ─── CONFIG ───
 const CHUNK_SIZE: int = 16
 const RENDER_DISTANCE: int = 4
-const TILE_SIZE: float = 1.0
+const TILE_SIZE: float = 3.0
 const SPACING: float = 1.0
 const BOTTOM_Y: float = -2.0
 const SEA_LEVEL: float = 0.0

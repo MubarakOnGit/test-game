@@ -2,20 +2,20 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://j4urxstog8n6"
-path.s3tc="res://.godot/imported/Pine Tree_GradientPallete_64.png-4e5c63ac5b21bd02b8069a9c340cdb1f.s3tc.ctex"
+uid="uid://bnqu8e7ussvpy"
+path.s3tc="res://.godot/imported/oak-base_basic_shaded_shaded.png-448a1289526cd4abe7e2f515930ce76b.s3tc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
 }
 generator_parameters={
-"md5": "e5b3366fddc0a76c5ec27c7118e448c1"
+"md5": "301396329662c2fc33c3c243a4ca8b50"
 }
 
 [deps]
 
-source_file="res://assets/trees/Pine Tree_GradientPallete_64.png"
-dest_files=["res://.godot/imported/Pine Tree_GradientPallete_64.png-4e5c63ac5b21bd02b8069a9c340cdb1f.s3tc.ctex"]
+source_file="res://assets/trees/oak-base_basic_shaded_shaded.png"
+dest_files=["res://.godot/imported/oak-base_basic_shaded_shaded.png-448a1289526cd4abe7e2f515930ce76b.s3tc.ctex"]
 
 [params]
 

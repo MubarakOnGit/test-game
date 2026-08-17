@@ -61,13 +61,13 @@ static func generate(data: ChunkData, world_seed: int) -> void:
 
 static func _compute(wx: float, wz: float) -> float:
 	var base_val := _base_noise.get_noise_2d(wx, wz)
-	var h := remap(base_val, -1.0, 1.0, 0.5, 4.5)
+	var h := remap(base_val, -1.0, 1.0, 1.0, 3.5)
 
 	# ── Mountains ─────────────────────────────────────────────────────────────
 	var mtn_val := _mountain_noise.get_noise_2d(wx, wz)
 	var mtn : float = 1.0 - mtn_val
-	if mtn > 0.4 and base_val > 0.2:
-		h += (mtn - 0.4) * 5.0
+	if mtn > 0.55 and base_val > 0.2:
+		h += (mtn - 0.55) * 2.5
 
 	# ── Rivers ────────────────────────────────────────────────────────────────
 	# abs(riv_val) is near 0 at the river centerline → carves a U-shaped channel
@@ -86,4 +86,5 @@ static func _compute(wx: float, wz: float) -> float:
 		var lake_depth : float = (lake_val - 0.35) / 0.65  # normalise 0→1
 		h -= lake_depth * lake_depth * 4.0   # gentle bowl shape, max -4
 
-	return floor(h)
+	# Snap to 0.5-unit steps instead of 1-unit — halves cliff wall height
+	return floor(h * 2.0) / 2.0

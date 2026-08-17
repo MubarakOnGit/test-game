@@ -55,24 +55,12 @@ static func commit(node: ChunkNode, data: ChunkData) -> void:
 		var instance = CharacterBody3D.new()
 		var type_lower: String = a_data["type"].to_lower()
 		
-		if "shark" in type_lower:
-			visual.scale = Vector3(0.5, 0.5, 0.5)
-			instance.set("move_anim", "Swim")
-		elif "fish" in type_lower:
-			visual.scale = Vector3(0.2, 0.2, 0.2)
-			instance.set("move_anim", "Swim")
-		elif "wolf" in type_lower:
+		if "wolf" in type_lower:
 			visual.scale = Vector3(1.7, 1.7, 1.7)
 			instance.set("move_anim", "Walk")
-		elif "stag" in type_lower:
-			visual.scale = Vector3(0.8, 0.8, 0.8)
-			instance.set("move_anim", "Walk")
 		elif "rabbit" in type_lower:
-			visual.scale = Vector3(0.35, 0.35, 0.35)
+			visual.scale = Vector3(0.70, 0.70, 0.70)
 			instance.set("move_anim", "Run")
-		elif "bird" in type_lower:
-			visual.scale = Vector3(0.3, 0.3, 0.3)
-			instance.set("move_anim", "fly")
 		else:
 			visual.scale = Vector3(0.35, 0.35, 0.35)
 			instance.set("move_anim", "walk")

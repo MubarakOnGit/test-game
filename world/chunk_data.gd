@@ -8,7 +8,7 @@ const BSIZE      := CHUNK_SIZE + 2 * BORDER   # = 18
 
 const SEA_LEVEL  := 0.0
 const BOTTOM_Y   := -2.0
-const TILE_SIZE  := 1.0
+const TILE_SIZE  := 3.0
 
 # ─── Identity ─────────────────────────────────────────────────────────────────
 var cx:         int   # chunk X coordinate (in chunk units)

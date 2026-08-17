@@ -13,8 +13,8 @@ static var _rock_c_mesh:   Mesh = null  # Rock C
 
 # ─── Per-species scale ranges for natural size variation ──────────────────────
 # [min_scale, max_scale] — randomized per instance using position hash
-const _PINE_SCALE     := [2.8, 4.4]   # Tall narrow conifers, medium variance
-const _BIRCH_SCALE    := [2.4, 3.8]   # Slender birches, moderate height
+const _PINE_SCALE     := [4.2, 6.6]   # Tall narrow conifers, medium variance
+const _BIRCH_SCALE    := [3.6, 5.7]   # Slender birches, moderate height
 const _SIMPLE_SCALE   := [3.2, 5.6]   # Broad canopy, most size diversity
 const _STYLIZED_SCALE := [2.6, 4.0]   # Mixed mid-elevation trees
 const _BUSH_A_SCALE   := [0.05, 0.15]   # Small bushes
@@ -25,9 +25,9 @@ const _ROCK_C_SCALE   := [0.6, 1.8]   # Rock cluster 2
 
 static func _ensure_meshes() -> void:
 	if _pine_mesh == null:
-		_pine_mesh = _extract_mesh("res://assets/trees/Pine Tree.glb")
+		_pine_mesh = _extract_mesh("res://assets/trees/pine-base_basic_shaded.glb")
 	if _birch_mesh == null:
-		_birch_mesh = _extract_mesh("res://assets/trees/Birch Tree.glb")
+		_birch_mesh = _extract_mesh("res://assets/trees/oak-base_basic_shaded.glb")
 	if _simple_mesh == null:
 		_simple_mesh = _extract_mesh("res://assets/trees/Simple Tree.glb")
 	if _stylized_mesh == null:
@@ -51,6 +51,17 @@ static func _extract_mesh(path: String) -> Mesh:
 		return _fallback_mesh()
 	var scene: Node = packed.instantiate()
 	var mesh: Mesh = _find_first_mesh(scene)
+	if mesh != null:
+		for i in mesh.get_surface_count():
+			var mat = mesh.surface_get_material(i)
+			if mat == null:
+				mat = StandardMaterial3D.new()
+				mesh.surface_set_material(i, mat)
+			if mat is StandardMaterial3D:
+				mat.vertex_color_use_as_albedo = true
+				mat.metallic = 0.0
+				mat.roughness = 1.0
+
 	scene.queue_free()
 	return mesh if mesh != null else _fallback_mesh()
 

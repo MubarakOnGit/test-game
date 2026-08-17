@@ -46,26 +46,16 @@ static func generate(data: ChunkData, world_seed: int) -> void:
 			var h = data.heights[hidx]
 			var is_water = h <= ChunkData.SEA_LEVEL or data.water_levels[hidx] > 0.0
 			
-			var animal_type = ""
-			var water_animal = false
-			
-			# Decide which animal to spawn
-			var pick = h_seed % 100
-			
+			# Skip water tiles — no aquatic animals
 			if is_water:
-				if h > -0.6:
-					continue # Don't spawn fish in shallow puddles where they stick out
-				water_animal = true
-				if pick < 40: animal_type = "Fish"
-				elif pick < 80: animal_type = "Fish-XWl86YFtpF"
-				elif pick < 90: animal_type = "Fish-BEcU9rjiAq"
-				else: animal_type = "Shark by Quaternius - YYsK3gRCBZ"
-			else:
-				# Land animals
-				if pick < 30: animal_type = "wolf"
-				elif pick < 60: animal_type = "Stag by Quaternius - tQdzbZ1Cmw"
-				elif pick < 90: animal_type = "blocky_rabbit"
-				else: animal_type = "bird_5_-_animated_low_poly" # Maybe birds just hop around
+				continue
+			
+			# Land animals: only wolf and blocky_rabbit
+			var pick = h_seed % 100
+			var animal_type = ""
+			if pick < 50: animal_type = "wolf"
+			else: animal_type = "blocky_rabbit"
+			var water_animal = false
 			
 			if animal_type != "":
 				data.animals.push_back({

@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://monqnrvxf8l4"
-path="res://.godot/imported/Stylized Tree.glb-326c4e70f66d25890179049fff193dea.scn"
+uid="uid://fi5wa65482a1"
+path="res://.godot/imported/oak-base_basic_shaded.glb-57497c502033e2ee314a676db074394c.scn"
 
 [deps]
 
-source_file="res://assets/trees/Stylized Tree.glb"
-dest_files=["res://.godot/imported/Stylized Tree.glb-326c4e70f66d25890179049fff193dea.scn"]
+source_file="res://assets/trees/oak-base_basic_shaded.glb"
+dest_files=["res://.godot/imported/oak-base_basic_shaded.glb-57497c502033e2ee314a676db074394c.scn"]
 
 [params]
 

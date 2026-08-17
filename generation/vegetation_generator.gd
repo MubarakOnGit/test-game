@@ -40,81 +40,34 @@ static func generate(data: ChunkData, world_seed: int) -> void:
 			var bidx := ChunkData.bi(lx, lz)
 			var hidx := ChunkData.hi(lx, lz)
 
-			var h     := data.heights[hidx]
 			var biome := data.biomes[bidx]
-			var moist := data.moistures[hidx]
-
-			# ── 1. Water guards — both run first, before biome/density ───────
-			# Guard A: Height — catches all tiles at/below sea level.
-			#          biome_generator also classifies these as SAND now.
-			if h <= ChunkData.SEA_LEVEL:
-				continue
-			# Guard B: water_levels — catches tiles above sea level that are
-			#          flooded (river banks, lake shores). water_levels is now
-			#          seeded by GenerationPipeline._seed_water() BEFORE
-			#          vegetation runs, so this check is always reliable.
-			if data.water_levels[hidx] > 0.0:
-				continue
-
-			# ── 3. Height gate — extra safety margin above water level ────────
-			if h < 2.0 or h > 4.6:
-				continue
-
-			# ── 4. Clearance check for large meshes ───────────────────────────
-			# Trees are scaled up very large (3-5 units) on a 1.0 unit grid.
-			# If we place a tree 2 tiles away from water or a cliff, its branches
-			# will still visually hang over the water or clip into the rock.
-			var has_clearance := true
-			var world_x   := data.cx * cs + lx
-			var world_z   := data.cz * cs + lz
 			
-			for dz in range(-2, 3):
-				for dx in range(-2, 3):
-					if dx == 0 and dz == 0: continue
-					
-					# Dynamically compute the exact height in world space so we 
-					# aren't limited by the chunk's 1-tile BORDER cache.
-					var check_wx = float(world_x + dx)
-					var check_wz = float(world_z + dz)
-					var n_h = HeightGenerator._compute(check_wx, check_wz)
-					
-					# If any tile within a 2-tile radius is water (<= 0) or a cliff (>= 4.0)
-					if n_h <= ChunkData.SEA_LEVEL or n_h >= 4.0:
-						has_clearance = false
-						break
-						
-				if not has_clearance:
-					break
-			if not has_clearance:
+			# Only spawn on GRASS
+			if biome != 0: # BiomeGenerator.GRASS
 				continue
-
-			# ── 4. Jittered grid — one candidate per NxN cell ────────────────
-			var is_tree = biome == BiomeGenerator.GRASS and h <= 4.2 and _is_tree_candidate(world_x, world_z, world_seed, _cell_size_for_height(h))
-			var is_bush = biome == BiomeGenerator.GRASS and h <= 4.0 and _is_tree_candidate(world_x, world_z, world_seed + 100, 3)
-			var is_rock = _is_tree_candidate(world_x, world_z, world_seed + 200, 4)
-
-			if not (is_tree or is_bush or is_rock):
+				
+			var h := data.heights[hidx]
+			if h <= ChunkData.SEA_LEVEL or data.water_levels[hidx] > 0.0:
 				continue
-
-			# ── 5. Density and Scatter logic ──────────────
+				
+			var world_x := data.cx * cs + lx
+			var world_z := data.cz * cs + lz
+			
+			# Sparse placement
+			if not _is_tree_candidate(world_x, world_z, world_seed, 6):
+				continue
+				
 			var density := _tree_noise.get_noise_2d(float(world_x), float(world_z))
 			var scatter := _jitter_noise.get_noise_2d(float(world_x) * 0.5, float(world_z) * 0.5)
 
-			var species = -1
-			if is_tree and density >= _density_threshold(h, moist) and scatter >= -0.3:
-				species = _pick_species(world_x, world_z, h, moist)
-			elif is_bush and density >= -0.15:
-				species = VegetationData.BUSH_A if scatter > 0.0 else VegetationData.ROSE_BUSH
-			elif is_rock and scatter > -0.2:
-				var rock_val = abs(hash(Vector2(world_x, world_z))) % 3
-				if rock_val == 0: species = VegetationData.ROCK_A
-				elif rock_val == 1: species = VegetationData.ROCK_B
-				else: species = VegetationData.ROCK_C
-			
-			if species == -1:
+			if density < -0.1:
 				continue
-
-			# Small sub-tile offset for natural feel (tight to avoid water edge crossings)
+				
+			# Randomly pick between Pine and Oak (using BIRCH index for Oak)
+			var species = 0 # VegetationData.PINE
+			if abs(hash(Vector2(world_x, world_z))) % 2 == 0:
+				species = 1 # VegetationData.BIRCH
+			
 			var off_x := clampf(scatter * 0.15, -0.15, 0.15)
 			var off_z := clampf(density  * 0.15, -0.15, 0.15)
 			data.vegetation.add(species, float(lx) + 0.5 + off_x, float(lz) + 0.5 + off_z)

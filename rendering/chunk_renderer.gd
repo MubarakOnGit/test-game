@@ -69,6 +69,7 @@ static func commit(node: ChunkNode, data: ChunkData, terrain_arrays, water_array
 			
 			var collision_shape := CollisionShape3D.new()
 			collision_shape.shape = shape
+			collision_shape.scale = Vector3(ChunkData.TILE_SIZE, 1.0, ChunkData.TILE_SIZE)
 			collision_shape.position = Vector3(offset_x, 0, offset_z)
 			node.static_body.add_child(collision_shape)
 			
