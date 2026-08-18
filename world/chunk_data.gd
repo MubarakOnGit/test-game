@@ -7,7 +7,7 @@ const BORDER     := 1
 const BSIZE      := CHUNK_SIZE + 2 * BORDER   # = 18
 
 const SEA_LEVEL  := 0.0
-const BOTTOM_Y   := -2.0
+const BOTTOM_Y   := -15.0
 const TILE_SIZE  := 3.0
 
 # ─── Identity ─────────────────────────────────────────────────────────────────
@@ -36,6 +36,10 @@ var animals: Array[Dictionary] = []
 ## game_time (seconds) when this chunk was last ecosystem-simulated.
 ## -1 means it has never been simulated (fresh generation).
 var last_sim_time: float = -1.0
+
+## Deterministic apple drop states: array of Dict { "apples": int, "last_drop": float }
+## Indexed by the tree index.
+var apple_tree_states: Array[Dictionary] = []
 
 # ─── Metadata ─────────────────────────────────────────────────────────────────
 var metadata: ChunkMetadata

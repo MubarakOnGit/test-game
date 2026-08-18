@@ -15,6 +15,36 @@ const SCALE_A := [0.7, 1.1]   # Short young: small variance
 const SCALE_B := [0.9, 1.4]   # Medium: moderate variance
 const SCALE_C := [1.0, 1.6]   # Tall: biggest, most variance
 
+const GRASS_SHADER_CODE = """
+shader_type spatial;
+render_mode cull_disabled, depth_draw_opaque;
+
+uniform sampler2D albedo_texture : source_color, filter_nearest_mipmap, repeat_enable;
+// How dark the roots should be (0.0 = black, 1.0 = normal color)
+uniform float root_darken_factor = 0.2;
+
+void fragment() {
+	vec4 albedo_tex = texture(albedo_texture, UV);
+	
+	// COLOR is the per-instance color tint passed from the MultiMesh
+	vec3 base_color = albedo_tex.rgb * COLOR.rgb;
+	
+	// Root darkening: VERTEX.y is the local height
+	// Assuming grass is roughly 0.0 to 1.0 units tall.
+	float height_factor = clamp(VERTEX.y * 1.5, root_darken_factor, 1.0);
+	
+	ALBEDO = base_color * height_factor;
+	ALPHA = albedo_tex.a;
+	ALPHA_SCISSOR_THRESHOLD = 0.5;
+	
+	ROUGHNESS = 0.9;
+	METALLIC = 0.0;
+}
+"""
+
+static var _grass_shader: Shader = null
+static var show_grass: bool = true
+
 static func _ensure_resources() -> void:
 	if _mesh_a == null:
 		_mesh_a = _load_mesh("res://assets/grass/grass_a.glb")
@@ -35,21 +65,24 @@ static func _load_mesh(path: String) -> Mesh:
 	return m if m != null else BoxMesh.new()
 
 static func _find_mesh(node: Node) -> Mesh:
+	if _grass_shader == null:
+		_grass_shader = Shader.new()
+		_grass_shader.code = GRASS_SHADER_CODE
+
 	if node is MeshInstance3D:
 		var m: Mesh = (node as MeshInstance3D).mesh
 		if m != null:
 			for i in m.get_surface_count():
-				var mat: Material = m.surface_get_material(i)
-				if mat == null:
-					var sm := StandardMaterial3D.new()
-					sm.vertex_color_use_as_albedo = true
-					sm.metallic = 0.0
-					sm.roughness = 1.0
-					m.surface_set_material(i, sm)
-				elif mat is StandardMaterial3D:
-					(mat as StandardMaterial3D).vertex_color_use_as_albedo = true
-					(mat as StandardMaterial3D).metallic = 0.0
-					(mat as StandardMaterial3D).roughness = 1.0
+				var smat := ShaderMaterial.new()
+				smat.shader = _grass_shader
+				
+				var old_mat: Material = m.surface_get_material(i)
+				if old_mat is StandardMaterial3D:
+					var albedo_tex = (old_mat as StandardMaterial3D).albedo_texture
+					if albedo_tex != null:
+						smat.set_shader_parameter("albedo_texture", albedo_tex)
+						
+				m.surface_set_material(i, smat)
 		return m
 	for child in node.get_children():
 		var r := _find_mesh(child)
@@ -59,6 +92,12 @@ static func _find_mesh(node: Node) -> Mesh:
 
 ## Scatter 3 grass variations across this chunk's grass tiles.
 static func commit(node: ChunkNode, data: ChunkData) -> void:
+	if node.sim_zone >= 2:
+		node.grass_multimesh.multimesh = null
+		node.grass_multimesh_b.multimesh = null
+		node.grass_multimesh_c.multimesh = null
+		return
+
 	_ensure_resources()
 
 	var cs: int   = ChunkData.CHUNK_SIZE
@@ -151,15 +190,16 @@ static func commit(node: ChunkNode, data: ChunkData) -> void:
 					trans_c.append(t)
 					color_c.append(age_tint)
 
-	_build_multimesh(node.grass_multimesh,   _mesh_a, trans_a, color_a)
-	_build_multimesh(node.grass_multimesh_b, _mesh_b, trans_b, color_b)
-	_build_multimesh(node.grass_multimesh_c, _mesh_c, trans_c, color_c)
+	_build_multimesh(node.grass_multimesh,   _mesh_a, trans_a, color_a, node.sim_zone)
+	_build_multimesh(node.grass_multimesh_b, _mesh_b, trans_b, color_b, node.sim_zone)
+	_build_multimesh(node.grass_multimesh_c, _mesh_c, trans_c, color_c, node.sim_zone)
 
 static func _build_multimesh(
 	mmi: MultiMeshInstance3D,
 	mesh: Mesh,
 	transforms: Array[Transform3D],
-	colors: Array[Color]
+	colors: Array[Color],
+	zone: int
 ) -> void:
 	var count := transforms.size()
 	if count == 0:
@@ -177,8 +217,10 @@ static func _build_multimesh(
 		mm.set_instance_color(i, colors[i])
 
 	mmi.multimesh   = mm
-	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-	mmi.custom_aabb = AABB(Vector3(-1000, -1000, -1000), Vector3(2000, 2000, 2000))
+	mmi.visible     = show_grass
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if zone == 0 else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Real chunk footprint: 16 tiles × 3.0 = 48 units, height 0-30. Enables proper frustum culling.
+	mmi.custom_aabb = AABB(Vector3(-1, -5, -1), Vector3(50, 35, 50))
 
 # ── Smooth patch noise (large sweeping 15-30m blobs) ─────────────────────────
 static func _patch_noise(x: float, z: float) -> float:

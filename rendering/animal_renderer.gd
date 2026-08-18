@@ -25,6 +25,9 @@ static func _get_animal_scene(type_name: String) -> PackedScene:
 		elif type_name == "rabbit" or type_name == "Rabbit":
 			candidate_paths.append("res://assets/animals/blocky_rabbit.glb")
 			candidate_paths.append("res://assets/animals/low_poly_rabbit.glb")
+		elif type_name == "crocodile" or type_name == "Crocodile":
+			candidate_paths.append("res://assets/crocodile/crocodile_shaded.glb")
+			candidate_paths.append("res://assets/crocodile.glb")
 		
 	var packed: PackedScene = null
 	for path in candidate_paths:
@@ -61,6 +64,9 @@ static func commit(node: ChunkNode, data: ChunkData) -> void:
 		elif "rabbit" in type_lower:
 			visual.scale = Vector3(0.70, 0.70, 0.70)
 			instance.set("move_anim", "Run")
+		elif "crocodile" in type_lower:
+			visual.scale = Vector3(1.2, 1.2, 1.2)
+			instance.set("move_anim", "swim")
 		else:
 			visual.scale = Vector3(0.35, 0.35, 0.35)
 			instance.set("move_anim", "walk")
@@ -78,5 +84,27 @@ static func commit(node: ChunkNode, data: ChunkData) -> void:
 		
 		# Add a small random rotation
 		instance.rotation.y = randf() * TAU
-		
+
+		# Fix shadow casting — GLB imports can have UNSHADED materials that glow at night.
+		# Traverse every MeshInstance3D in the visual and force proper shadow settings.
+		_fix_mesh_shadows(visual)
+
 		node.animals_container.add_child(instance)
+
+static func _fix_mesh_shadows(node: Node) -> void:
+	if node is MeshInstance3D:
+		var mi := node as MeshInstance3D
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		# Fix any unshaded materials to use proper shading
+		for i in mi.get_surface_override_material_count():
+			var mat := mi.get_surface_override_material(i)
+			if mat is StandardMaterial3D:
+				(mat as StandardMaterial3D).shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
+		# Also fix mesh-embedded materials
+		if mi.mesh:
+			for i in mi.mesh.get_surface_count():
+				var mat := mi.mesh.surface_get_material(i)
+				if mat is StandardMaterial3D:
+					(mat as StandardMaterial3D).shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
+	for child in node.get_children():
+		_fix_mesh_shadows(child)

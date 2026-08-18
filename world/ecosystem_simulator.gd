@@ -15,6 +15,8 @@ class_name EcosystemSimulator
 const MAX_RABBITS := 8
 ## Max wolves that can live in one chunk
 const MAX_WOLVES  := 2
+## Max crocodiles that can live in one water-containing chunk
+const MAX_CROCS   := 1
 
 ## Rabbit base birth rate per day (fraction of population that reproduces)
 const RABBIT_BIRTH_RATE := 0.5      # +50% per day if food is plentiful
@@ -43,9 +45,14 @@ const SECONDS_PER_DAY := 300.0
 static func catch_up(data: ChunkData) -> void:
 	var now := DayNightCycle.game_time
 	
-	# Fresh chunk: just stamp the time, don't alter spawns
+	# Fresh chunk: seed initial population then stamp the time
 	if data.last_sim_time < 0.0:
 		data.last_sim_time = now
+		# Seed starting animals (rabbits, wolves by food availability, crocs by water)
+		var food := _count_food(data)
+		var init_rabbits := mini(3, food) if food > 0 else 0
+		var init_wolves  := 1 if init_rabbits >= 4 else 0
+		_rebuild_animals(data, init_rabbits, init_wolves, -1)  # -1 = auto-detect 1 croc if water
 		return
 	
 	var elapsed_seconds := now - data.last_sim_time
@@ -54,11 +61,11 @@ static func catch_up(data: ChunkData) -> void:
 		return
 	
 	var days_elapsed := elapsed_seconds / SECONDS_PER_DAY
-	data.last_sim_time = now
 	
 	# Count current populations
 	var rabbits := _count(data.animals, "blocky_rabbit")
 	var wolves  := _count(data.animals, "wolf")
+	var crocs   := _count(data.animals, "crocodile")
 	var food    := _count_food(data)
 	
 	# Run discrete Lotka-Volterra for each day elapsed (capped to avoid huge loops)
@@ -94,7 +101,24 @@ static func catch_up(data: ChunkData) -> void:
 			wolves = 1
 	
 	# ── Apply new populations back to ChunkData ──
-	_rebuild_animals(data, rabbits, wolves)
+	_rebuild_animals(data, rabbits, wolves, crocs)
+
+	# ── Apple Catch-up ──
+	var trees_count = data.vegetation.count_of(VegetationData.APPLE_TREE)
+	if trees_count > 0:
+		if data.apple_tree_states.size() != trees_count:
+			data.apple_tree_states.clear()
+			for i in trees_count:
+				data.apple_tree_states.append({ "last_drop": data.last_sim_time })
+				
+		var drop_interval := 100.0
+		for i in trees_count:
+			var state = data.apple_tree_states[i]
+			var drops_since_last = floor((now - state.last_drop) / drop_interval)
+			if drops_since_last > 0:
+				state.last_drop += drops_since_last * drop_interval
+
+	data.last_sim_time = now
 
 # ─── Save Living Animals Before Unload ────────────────────────────────────────
 
@@ -107,7 +131,7 @@ static func snapshot(data: ChunkData, node: ChunkNode) -> void:
 	var saved: Array[Dictionary] = []
 	for child in node.animals_container.get_children():
 		if child is Animal:
-			var local_pos := child.global_position - node.global_position
+			var local_pos: Vector3 = child.global_position - node.global_position
 			saved.append({
 				"type": child.animal_type,
 				"x": local_pos.x / ChunkData.TILE_SIZE,
@@ -138,15 +162,18 @@ static func _count_food(data: ChunkData) -> int:
 	var apples  := data.vegetation.count_of(VegetationData.APPLE_TREE)
 	return berries + apples
 
-static func _rebuild_animals(data: ChunkData, rabbits: int, wolves: int) -> void:
+static func _rebuild_animals(data: ChunkData, rabbits: int, wolves: int, crocs: int = -1) -> void:
 	# Keep exact entries where we can, then add/remove to match counts
 	var existing_rabbits: Array[Dictionary] = []
 	var existing_wolves:  Array[Dictionary] = []
+	var existing_crocs: Array[Dictionary] = []
 	for a in data.animals:
 		if a.get("type", "") == "blocky_rabbit":
 			existing_rabbits.append(a)
 		elif a.get("type", "") == "wolf":
 			existing_wolves.append(a)
+		elif a.get("type", "") == "crocodile":
+			existing_crocs.append(a)
 	
 	# Trim or grow rabbit list
 	while existing_rabbits.size() > rabbits:
@@ -160,7 +187,25 @@ static func _rebuild_animals(data: ChunkData, rabbits: int, wolves: int) -> void
 	while existing_wolves.size() < wolves:
 		existing_wolves.append(_random_animal_dict("wolf", false, data))
 	
-	data.animals = existing_rabbits + existing_wolves
+	# Spawn crocs only if chunk has water. Cap to MAX_CROCS (1 per chunk).
+	var water_spawn := _find_water_spawn(data)
+	if crocs < 0:
+		crocs = 1 if water_spawn != Vector2.ZERO else 0
+	crocs = mini(crocs, MAX_CROCS)  # Hard cap
+	if water_spawn != Vector2.ZERO:
+		while existing_crocs.size() > crocs:
+			existing_crocs.pop_back()
+		while existing_crocs.size() < crocs:
+			var ws = _find_water_spawn(data)
+			existing_crocs.append({
+				"type": "crocodile",
+				"x": ws.x, "y": -0.8, "z": ws.y,  # Sink deeply underwater
+				"is_water": true, "hunger": 80.0
+			})
+	else:
+		existing_crocs.clear()
+
+	data.animals = existing_rabbits + existing_wolves + existing_crocs
 
 static func _random_animal_dict(type: String, is_water: bool, data: ChunkData) -> Dictionary:
 	return {
@@ -171,3 +216,17 @@ static func _random_animal_dict(type: String, is_water: bool, data: ChunkData) -
 		"is_water": is_water,
 		"hunger": 80.0,
 	}
+
+## Find a random water tile in the chunk for crocodile spawning.
+## Returns Vector2.ZERO if no water tile exists.
+static func _find_water_spawn(data: ChunkData) -> Vector2:
+	var cs := ChunkData.CHUNK_SIZE
+	var candidates: Array[Vector2] = []
+	for lz in range(cs):
+		for lx in range(cs):
+			var hidx := ChunkData.hi(lx, lz)
+			if data.water_levels[hidx] > 0.0:
+				candidates.append(Vector2(float(lx) + 0.5, float(lz) + 0.5))
+	if candidates.is_empty():
+		return Vector2.ZERO
+	return candidates[randi() % candidates.size()]

@@ -15,26 +15,7 @@ var _alive_timer: float = 0.0
 func _ready() -> void:
 	# Add mesh
 	var mi := MeshInstance3D.new()
-	var packed: PackedScene = load("res://assets/apple.glb")
-	if packed != null:
-		var scene = packed.instantiate()
-		mi.mesh = _find_first_mesh(scene)
-		scene.queue_free()
-	
-	if mi.mesh == null:
-		mi.mesh = BoxMesh.new()
-		mi.mesh.size = Vector3(0.3, 0.3, 0.3)
-		
-	# Ensure vertex colors work
-	for i in mi.mesh.get_surface_count():
-		var mat = mi.mesh.surface_get_material(i)
-		if mat == null:
-			mat = StandardMaterial3D.new()
-			mi.mesh.surface_set_material(i, mat)
-		if mat is StandardMaterial3D:
-			mat.vertex_color_use_as_albedo = true
-			mat.metallic = 0.0
-			mat.roughness = 1.0
+	mi.mesh = _get_apple_mesh_static()
 
 	mi.scale = Vector3(2.0, 2.0, 2.0)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
@@ -73,11 +54,37 @@ func _physics_process(delta: float) -> void:
 	else:
 		_rest_timer = 0.0
 
-func _find_first_mesh(node: Node) -> Mesh:
+static var _cached_mesh: Mesh = null
+
+static func _get_apple_mesh_static() -> Mesh:
+	if _cached_mesh == null:
+		var packed: PackedScene = load("res://assets/apple.glb")
+		if packed != null:
+			var scene = packed.instantiate()
+			_cached_mesh = _find_first_mesh_static(scene)
+			scene.queue_free()
+		if _cached_mesh == null:
+			var bm := BoxMesh.new()
+			bm.size = Vector3(0.3, 0.3, 0.3)
+			_cached_mesh = bm
+			
+		# Ensure vertex colors work
+		for i in _cached_mesh.get_surface_count():
+			var mat = _cached_mesh.surface_get_material(i)
+			if mat == null:
+				mat = StandardMaterial3D.new()
+				_cached_mesh.surface_set_material(i, mat)
+			if mat is StandardMaterial3D:
+				mat.vertex_color_use_as_albedo = true
+				mat.metallic = 0.0
+				mat.roughness = 1.0
+	return _cached_mesh
+
+static func _find_first_mesh_static(node: Node) -> Mesh:
 	if node is MeshInstance3D:
 		return node.mesh
 	for child in node.get_children():
-		var m = _find_first_mesh(child)
+		var m = _find_first_mesh_static(child)
 		if m != null:
 			return m
 	return null

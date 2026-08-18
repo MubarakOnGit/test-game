@@ -6,6 +6,7 @@ const RUN_SPEED = 12.0
 const JUMP_VELOCITY = 15.0
 
 var camera_y_rotation: float = 45.0 # Updated by WorldManager
+var water_renderer: WaterRenderer = null  # Assigned by WorldManager after init
 
 # Get the gravity from the project settings to be synced with RigidBody nodes.
 var gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity", 9.8) * 2.5
@@ -31,6 +32,7 @@ func _init() -> void:
 	safe_margin        = 0.02
 	
 func _ready() -> void:
+	add_to_group("player")
 	var glb = load("res://assets/man.glb").instantiate()
 	glb.scale = Vector3(2.5, 2.5, 2.5) # Scale up the tiny model
 	add_child(glb)
@@ -124,6 +126,8 @@ func _handle_water_ripples(is_moving: bool) -> void:
 		if _water_state == WaterState.LAND:
 			# ENTERING WATER -> Large Splash
 			_water_state = WaterState.IN_WATER
+			if water_renderer:
+				water_renderer.set_player_in_water(true)
 			WorldEventBus.water_ripple_spawned.emit(global_position, 1.5, 0.8, 1.0, 4.0)
 			_distance_since_last_ripple = 0.0
 			_idle_ripple_timer = 0.0
@@ -146,4 +150,6 @@ func _handle_water_ripples(is_moving: bool) -> void:
 		if _water_state == WaterState.IN_WATER:
 			# LEAVING WATER -> Medium Splash
 			_water_state = WaterState.LAND
+			if water_renderer:
+				water_renderer.set_player_in_water(false)
 			WorldEventBus.water_ripple_spawned.emit(global_position, 1.2, 0.5, 0.8, 3.0)

@@ -42,10 +42,11 @@ func _ready() -> void:
 	# 2. Setup rendering environment
 	_setup_camera()
 	_setup_lighting()
-	_setup_player()
 	
 	water_renderer = WaterRenderer.new()
 	add_child(water_renderer)
+	
+	_setup_player()
 	
 	# 3. Setup debug UI
 	var hud_scene = load("res://debug/profiler_hud.gd")
@@ -206,7 +207,8 @@ func _setup_lighting() -> void:
 	sun.name = "Sun"
 	sun.shadow_enabled = true
 	sun.shadow_bias = 0.03
-	sun.directional_shadow_max_distance = 180
+	sun.directional_shadow_max_distance = 100  # 180 was wasteful; isometric view rarely sees beyond 90 units
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL # 1 split is perfect for fixed isometric, cuts shadow draw calls by 75%
 	add_child(sun)
 	
 	moon = DirectionalLight3D.new()
@@ -233,6 +235,10 @@ func _setup_lighting() -> void:
 	env.ambient_light_energy = 0.6
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
 	
+	# SSAO was too expensive (full-screen post-process every frame).
+	# Root-darkening shader on grass handles the grounding effect instead.
+	env.ssao_enabled = false
+	
 	env_node.environment = env
 	add_child(env_node)
 	
@@ -249,5 +255,6 @@ func _setup_lighting() -> void:
 func _setup_player() -> void:
 	player = Player.new()
 	player.position = Vector3(0, 15.0, 0) # Start high and drop in
+	player.water_renderer = water_renderer  # So player can swap water shader on entry/exit
 	add_child(player)
 	chunk_manager.player_node = player

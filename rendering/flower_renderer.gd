@@ -19,6 +19,10 @@ static func _load_mesh(path: String) -> Mesh:
 
 ## Scatter pixel flowers sparsely across grass tiles
 static func commit(node: ChunkNode, data: ChunkData) -> void:
+	if node.sim_zone >= 2:
+		node.flower_multimesh.multimesh = null
+		return
+
 	_ensure_resources()
 
 	var cs: int   = ChunkData.CHUNK_SIZE
@@ -100,4 +104,5 @@ static func commit(node: ChunkNode, data: ChunkData) -> void:
 
 	node.flower_multimesh.multimesh   = mm
 	node.flower_multimesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	node.flower_multimesh.custom_aabb = AABB(Vector3(-1000, -1000, -1000), Vector3(2000, 2000, 2000))
+	# Real chunk footprint AABB — enables proper frustum culling.
+	node.flower_multimesh.custom_aabb = AABB(Vector3(-1, -5, -1), Vector3(50, 35, 50))

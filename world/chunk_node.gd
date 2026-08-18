@@ -12,9 +12,6 @@ var simple_multimesh:      MultiMeshInstance3D  # Simple Tree.glb  (1 draw call)
 var stylized_multimesh:    MultiMeshInstance3D  # Stylized Tree.glb(1 draw call)
 var bush_a_multimesh:      MultiMeshInstance3D  # Bush A
 var rose_bush_multimesh:   MultiMeshInstance3D  # Rose Bush
-var rock_a_multimesh:      MultiMeshInstance3D  # Rock A
-var rock_b_multimesh:      MultiMeshInstance3D  # Rock B
-var rock_c_multimesh:      MultiMeshInstance3D  # Rock C
 var grass_multimesh:       MultiMeshInstance3D  # Grass variation A - short/young
 var grass_multimesh_b:     MultiMeshInstance3D  # Grass variation B - medium/thick
 var grass_multimesh_c:     MultiMeshInstance3D  # Grass variation C - tall/old
@@ -49,6 +46,12 @@ var rendered_terrain_version: int = -1
 var rendered_vegetation_version: int = -1
 var rendered_water_version: int = -1
 
+# ─── Zone ─────────────────────────────────────────────────────────────────────
+## 0 = full simulation (player nearby), 1 = throttled, 2 = render-only
+var sim_zone: int = 2
+## Throttle timer for apple rot + berry respawn checks (fire once per second)
+var _rot_check_timer: float = 0.0
+
 func _init() -> void:
 	name = "ChunkNode"
 	mesh_instance        = MeshInstance3D.new()
@@ -60,9 +63,6 @@ func _init() -> void:
 	stylized_multimesh   = MultiMeshInstance3D.new()
 	bush_a_multimesh     = MultiMeshInstance3D.new()
 	rose_bush_multimesh  = MultiMeshInstance3D.new()
-	rock_a_multimesh     = MultiMeshInstance3D.new()
-	rock_b_multimesh     = MultiMeshInstance3D.new()
-	rock_c_multimesh     = MultiMeshInstance3D.new()
 	grass_multimesh      = MultiMeshInstance3D.new()
 	grass_multimesh_b    = MultiMeshInstance3D.new()
 	grass_multimesh_c    = MultiMeshInstance3D.new()
@@ -82,9 +82,6 @@ func _init() -> void:
 	stylized_multimesh.name   = "StylizedTrees"
 	bush_a_multimesh.name     = "BushesA"
 	rose_bush_multimesh.name  = "RoseBushes"
-	rock_a_multimesh.name     = "RocksA"
-	rock_b_multimesh.name     = "RocksB"
-	rock_c_multimesh.name     = "RocksC"
 	grass_multimesh.name      = "GrassTuftsA"
 	grass_multimesh_b.name    = "GrassTuftsB"
 	grass_multimesh_c.name    = "GrassTuftsC"
@@ -104,9 +101,6 @@ func _init() -> void:
 	add_child(stylized_multimesh)
 	add_child(bush_a_multimesh)
 	add_child(rose_bush_multimesh)
-	add_child(rock_a_multimesh)
-	add_child(rock_b_multimesh)
-	add_child(rock_c_multimesh)
 	add_child(grass_multimesh)
 	add_child(grass_multimesh_b)
 	add_child(grass_multimesh_c)
@@ -130,9 +124,6 @@ func reset() -> void:
 	stylized_multimesh.multimesh  = null
 	bush_a_multimesh.multimesh    = null
 	rose_bush_multimesh.multimesh = null
-	rock_a_multimesh.multimesh    = null
-	rock_b_multimesh.multimesh    = null
-	rock_c_multimesh.multimesh    = null
 	grass_multimesh.multimesh     = null
 	grass_multimesh_b.multimesh   = null
 	grass_multimesh_c.multimesh   = null
@@ -220,16 +211,7 @@ func _rebuild_ground_apple_mesh() -> void:
 		return
 	
 	# Load mesh once
-	var apple_mesh: Mesh = null
-	var packed: PackedScene = load("res://assets/apple.glb")
-	if packed != null:
-		var scene = packed.instantiate()
-		apple_mesh = _find_first_mesh_static(scene)
-		scene.queue_free()
-	if apple_mesh == null:
-		var bm := BoxMesh.new()
-		bm.size = Vector3(0.3, 0.3, 0.3)
-		apple_mesh = bm
+	var apple_mesh = _get_apple_mesh()
 	
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
@@ -252,7 +234,22 @@ func _rebuild_ground_apple_mesh() -> void:
 	
 	apple_ground_multimesh.multimesh = mm
 	apple_ground_multimesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	apple_ground_multimesh.custom_aabb = AABB(Vector3(-1000, -1000, -1000), Vector3(2000, 2000, 2000))
+	apple_ground_multimesh.custom_aabb = AABB(Vector3(-1, -5, -1), Vector3(50, 35, 50))
+
+static var _apple_mesh_cached: Mesh = null
+
+static func _get_apple_mesh() -> Mesh:
+	if _apple_mesh_cached == null:
+		var packed: PackedScene = load("res://assets/apple.glb")
+		if packed != null:
+			var scene = packed.instantiate()
+			_apple_mesh_cached = _find_first_mesh_static(scene)
+			scene.queue_free()
+		if _apple_mesh_cached == null:
+			var bm := BoxMesh.new()
+			bm.size = Vector3(0.3, 0.3, 0.3)
+			_apple_mesh_cached = bm
+	return _apple_mesh_cached
 
 static func _find_first_mesh_static(node: Node) -> Mesh:
 	if node is MeshInstance3D:
@@ -266,36 +263,40 @@ static func _find_first_mesh_static(node: Node) -> Mesh:
 func _process(delta: float) -> void:
 	if not visible:
 		return
-		
-	# Process apple spawning manually tied to game time speed
-	if apple_spawn_timer >= 0.0:
+	
+	# Apple physics drops — Zone 0 only (player can see and interact)
+	if sim_zone == 0 and apple_spawn_timer >= 0.0:
 		apple_spawn_timer -= delta * DayNightCycle.current_speed
 		if apple_spawn_timer <= 0.0:
 			_spawn_apple()
 
-	# Periodically process apple rotting
-	if apple_ground_positions.is_empty():
+	# Throttled checks (apple rot + berry respawn) — all zones, but only once per second
+	if apple_ground_positions.is_empty() and berry_positions.is_empty():
 		return
 		
-	var now := DayNightCycle.game_time
-	var needs_rebuild := false
+	_rot_check_timer -= delta
+	if _rot_check_timer > 0.0:
+		return
+	_rot_check_timer = 1.0
 	
-	# Iterate backwards to safely remove elements
+	var now := DayNightCycle.game_time
+	var needs_apple_rebuild := false
+	
+	# Apple rot check (1x per second)
 	for i in range(apple_ground_positions.size() - 1, -1, -1):
 		var age := now - apple_ground_times[i]
 		if age > 300.0:
-			# Fully rotted, despawn it (1 in-game day = 300s)
 			apple_ground_positions.remove_at(i)
 			apple_ground_times.remove_at(i)
-			needs_rebuild = true
-		elif age > 270.0:
-			# In the process of rotting, just mark for visual update (last 30s)
-			needs_rebuild = true
+			needs_apple_rebuild = true
+		elif age > 270.0 and sim_zone == 0:
+			# Only animate the rot shrink in Zone 0 where player can see it
+			needs_apple_rebuild = true
 			
-	if needs_rebuild:
+	if needs_apple_rebuild:
 		_rebuild_ground_apple_mesh()
 
-	# ── Berry Bush Pickup & Respawn ──────────────────────────────────────────
+	# Berry respawn check (1x per second)
 	if berry_positions.is_empty():
 		return
 
@@ -303,20 +304,19 @@ func _process(delta: float) -> void:
 	var player_local_pos := Vector3.ZERO
 	var player_valid := player_ref != null and is_instance_valid(player_ref)
 	if player_valid:
-		# Convert player world pos to this chunk's local space
 		player_local_pos = player_ref.global_position - global_position
 
 	for i in berry_positions.size():
 		if berry_has_berry[i] == 1:
-			# Check player proximity for pickup
-			if player_valid:
+			# Berry pickup — Zone 0 only (player must be nearby to pick)
+			if sim_zone == 0 and player_valid:
 				var dist_sq: float = (player_local_pos - berry_positions[i]).length_squared()
-				if dist_sq < 2.25:  # 1.5 units radius squared
+				if dist_sq < 2.25:
 					berry_has_berry[i] = 0
 					berry_respawn_times[i] = now
 					berry_changed = true
 		else:
-			# Respawn check — 1 in-game day (300 game-time seconds)
+			# Respawn check — all zones, but throttled to 1x/sec by _rot_check_timer
 			if now - berry_respawn_times[i] >= 300.0:
 				berry_has_berry[i] = 1
 				berry_changed = true
@@ -357,7 +357,7 @@ func _rebuild_berry_meshes() -> void:
 				mm.set_instance_transform(fi, Transform3D(b, p))
 				fi += 1
 		berry_full_multimesh.multimesh    = mm
-		berry_full_multimesh.custom_aabb  = AABB(Vector3(-1000, -1000, -1000), Vector3(2000, 2000, 2000))
+		berry_full_multimesh.custom_aabb  = AABB(Vector3(-1, -5, -1), Vector3(50, 35, 50))
 	else:
 		berry_full_multimesh.multimesh = null
 
@@ -376,7 +376,7 @@ func _rebuild_berry_meshes() -> void:
 				mm.set_instance_transform(ei, Transform3D(b, p))
 				ei += 1
 		berry_empty_multimesh.multimesh    = mm
-		berry_empty_multimesh.custom_aabb  = AABB(Vector3(-1000, -1000, -1000), Vector3(2000, 2000, 2000))
+		berry_empty_multimesh.custom_aabb  = AABB(Vector3(-1, -5, -1), Vector3(50, 35, 50))
 	else:
 		berry_empty_multimesh.multimesh = null
 

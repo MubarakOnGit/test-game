@@ -3,6 +3,9 @@ render_mode diffuse_lambert;
 
 varying vec3 world_pos;
 varying vec4 v_color;
+varying float v_patch_val;
+varying float v_mblend;
+varying float v_caustic;
 
 const vec3 grass_colors[7] = vec3[](
 	vec3(0.329, 0.620, 0.118), // #549e1e  mid grass
@@ -55,23 +58,21 @@ float noise(vec2 p) {
 	return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
 
-// Large-scale meadow blend for flat plains
-// Returns 0.0 = Lime Green, 1.0 = Yellowish Green
-float meadow_blend(vec2 world_xz) {
-	vec2 p = world_xz * 0.012; // Very low frequency = large sweeping colour patches
-	vec2 i = floor(p);
-	vec2 f = fract(p);
-	vec2 u = f * f * (3.0 - 2.0 * f);
-	return mix(
-		mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
-		mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x),
-		u.y
-	);
-}
-
 void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	v_color = COLOR; // Read from vertex color
+	
+	// Snap to block grid for stable per-block color noise
+	vec2 block_id = floor(world_pos.xz / 3.0);
+	v_patch_val = noise(block_id * 0.25);
+	v_mblend = noise(block_id * 0.04);
+	
+	// Precalculate underwater caustics per vertex (linear interpolation across faces is much cheaper than per-pixel)
+	vec2 c1 = world_pos.xz * 0.4  + vec2( TIME * 0.06,  TIME * 0.04);
+	vec2 c2 = world_pos.xz * 0.55 + vec2(-TIME * 0.05,  TIME * 0.07);
+	float cn1 = noise(c1);
+	float cn2 = noise(c2);
+	v_caustic = smoothstep(0.25, 0.75, cn1 * cn2);
 }
 
 void fragment() {
@@ -82,28 +83,20 @@ void fragment() {
 	float cliff  = v_color.a; // drop depth (normalized for side stratification)
 
 	vec3 albedo;
-	
-	// Snap to block grid (TILE_SIZE = 3.0) — ensures entire voxel face is one solid color
-	vec2 block_id = floor(world_pos.xz / 3.0);
-	
-	// Sample value noise using block coordinates (not world coords)
-	// so each block gets a stable unique value regardless of tile size
-	float patch_val = noise(block_id * 0.25);
 
 	if (is_top) {
 		// Top face - color determined by biome
 		if (biome < 0.5) {
 			// Grass: blend individual per-block patch variation
 			// with a large-scale meadow gradient for a beautiful meadow look.
-			int base_idx = int(patch_val * 6.99); // 0 to 6 per-block variation
+			int base_idx = int(v_patch_val * 6.99); // 0 to 6 per-block variation
 			
 			// Meadow blend using block_id — large sweeping patches between lush/dry grass
-			float mblend = noise(block_id * 0.04);
-			vec3 lush_col = mix(grass_colors[0], grass_colors[6], patch_val);
-			vec3 dry_col  = mix(grass_colors[3], grass_colors[1], patch_val);
-			albedo = mix(lush_col, dry_col, mblend);
+			vec3 lush_col = mix(grass_colors[0], grass_colors[6], v_patch_val);
+			vec3 dry_col  = mix(grass_colors[3], grass_colors[1], v_patch_val);
+			albedo = mix(lush_col, dry_col, v_mblend);
 		} else if (biome < 1.5) {
-			int idx = int(patch_val * 2.99); // 0 to 2
+			int idx = int(v_patch_val * 2.99); // 0 to 2
 			albedo = sand_colors[idx];
 		} else if (biome < 2.5) {
 			albedo = rock_top;
@@ -116,7 +109,7 @@ void fragment() {
 		
 		// ─── SIDE faces ───
 		// Stratified bands — thresholds are in world Y units, not block units
-		int dirt_idx = int(patch_val * 3.99);
+		int dirt_idx = int(v_patch_val * 3.99);
 		if (dist_from_top < 0.4) {
 			// Top sliver — matches surface type (grass shows dirt on side)
 			if (biome > 2.5) albedo = snow_color;
@@ -127,7 +120,6 @@ void fragment() {
 			// Deep stratum — always rock/dirt mix
 			albedo = mix(dirt_colors[dirt_idx], rock_colors[1], clamp((dist_from_top - 0.4) * 0.5, 0.0, 1.0));
 		}
-		
 	}
 
 	// Ambient occlusion (darken crevices)
@@ -140,12 +132,12 @@ void fragment() {
 	const float WATER_Y = 0.45;
 	if (world_pos.y < WATER_Y) {
 		// Replace color: top face → sand, side face → darker sandy dirt
-		int sand_idx = int(patch_val * 2.99);
+		int sand_idx = int(v_patch_val * 2.99);
 		if (is_top) {
 			albedo = sand_colors[sand_idx];
 		} else {
 			// Sides: blend sand with dirt for a wet-sand look
-			int dirt_idx = int(patch_val * 3.99);
+			int dirt_idx = int(v_patch_val * 3.99);
 			albedo = mix(sand_colors[sand_idx], dirt_colors[dirt_idx], 0.5);
 		}
 
@@ -164,14 +156,9 @@ void fragment() {
 			float depth_below  = WATER_Y - world_pos.y;
 			float shallow_mask = 1.0 - smoothstep(0.0, 2.0, depth_below);
 			if (shallow_mask > 0.001) {
-				vec2 c1 = world_pos.xz * 0.4  + vec2( TIME * 0.06,  TIME * 0.04);
-				vec2 c2 = world_pos.xz * 0.55 + vec2(-TIME * 0.05,  TIME * 0.07);
-				float cn1    = noise(c1);
-				float cn2    = noise(c2);
-				float caustic = smoothstep(0.25, 0.75, cn1 * cn2);
 				// Cap: caustic can brighten but never exceed the pre-depth-darkened level
 				float max_add = (1.0 / depth_factor - 1.0) * length(albedo);
-				albedo += caustic * shallow_mask * min(0.07, max_add);
+				albedo += v_caustic * shallow_mask * min(0.07, max_add);
 			}
 		}
 	}

@@ -31,6 +31,7 @@ func _init(db: WorldDatabase, w_seed: int) -> void:
 func tick(center_chunk: Vector2i) -> void:
 	_update_streaming(center_chunk)
 	_process_generation()
+	_update_zones(center_chunk)
 
 ## Main tick for uploading finished meshes to the GPU.
 func tick_uploads() -> void:
@@ -52,6 +53,12 @@ func tick_uploads() -> void:
 			node = _get_pool_node()
 			node.chunk_key = Vector2i(data.cx, data.cz)
 			node.position = Vector3(data.world_origin_x(), 0, data.world_origin_z())
+			
+			# Initial zone assignment based on upload distance
+			var dist_x = absi(data.cx - player_node.position.x / (ChunkData.CHUNK_SIZE * ChunkData.TILE_SIZE)) if player_node else 0
+			var dist_z = absi(data.cz - player_node.position.z / (ChunkData.CHUNK_SIZE * ChunkData.TILE_SIZE)) if player_node else 0
+			node.sim_zone = maxi(dist_x, dist_z)
+			if node.sim_zone > 2: node.sim_zone = 2
 		
 		# Run catch-up simulation before spawning animals into the scene
 		EcosystemSimulator.catch_up(data)
@@ -127,6 +134,66 @@ func _update_streaming(center_chunk: Vector2i) -> void:
 		# Enqueue the closest chunk
 		var key = candidates[0]
 		_queue_generate[key] = true
+
+func _update_zones(center_chunk: Vector2i) -> void:
+	for key in _active_nodes.keys():
+		var node: ChunkNode = _active_nodes[key]
+		var dist_x := absi(key.x - center_chunk.x)
+		var dist_z := absi(key.y - center_chunk.y)
+		var dist := maxi(dist_x, dist_z)
+		
+		var current_zone = node.sim_zone
+		var new_zone = current_zone
+		
+		# Hysteresis:
+		# Zone 0: enters <=0, exits >1
+		# Zone 1: enters <=1, exits >2
+		# Zone 2: enters <=4, exits >5 (but cleanup handles >4 anyway)
+		if current_zone == 0 and dist > 1:
+			new_zone = 1
+		elif current_zone == 1:
+			if dist <= 1:
+				new_zone = 0
+			elif dist > 2:
+				new_zone = 2
+		elif current_zone == 2:
+			if dist <= 2:
+				new_zone = 1
+				
+		if new_zone != current_zone:
+			node.sim_zone = new_zone
+			# If crossing LOD boundary (between 1 and 2), rebuild detail multimeshes
+			if (current_zone < 2 and new_zone == 2) or (current_zone == 2 and new_zone < 2):
+				var data = database.get_chunk(key)
+				if data:
+					GrassRenderer.commit(node, data)
+					FlowerRenderer.commit(node, data)
+					if new_zone == 2:
+						node.berry_full_multimesh.multimesh = null
+						node.berry_empty_multimesh.multimesh = null
+						_set_tree_shadows(node, false)
+					else:
+						node._rebuild_berry_meshes()
+						_set_tree_shadows(node, true)
+			
+			# If entering/leaving Zone 0, dynamically toggle shadows without rebuilding
+			if new_zone == 0:
+				node.grass_multimesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+				node.grass_multimesh_b.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+				node.grass_multimesh_c.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+			elif current_zone == 0:
+				node.grass_multimesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				node.grass_multimesh_b.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				node.grass_multimesh_c.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+func _set_tree_shadows(node: ChunkNode, on: bool) -> void:
+	var setting = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if on else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	node.pine_multimesh.cast_shadow = setting
+	node.birch_multimesh.cast_shadow = setting
+	node.simple_multimesh.cast_shadow = setting
+	node.stylized_multimesh.cast_shadow = setting
+	node.bush_a_multimesh.cast_shadow = setting
+	node.rose_bush_multimesh.cast_shadow = setting
 
 func _process_generation() -> void:
 	if _queue_generate.size() > 0:

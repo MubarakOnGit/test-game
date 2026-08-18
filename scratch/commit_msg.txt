@@ -1,0 +1,44 @@
+feat: Animal AI ecosystem with hunger, predation, flee behavior, and offline Lotka-Volterra simulation
+
+Animal AI State Machine
+- Added new AI states to Animal class: FLEE, SEEK_FOOD, EAT
+- Added hunger stat (decays over time) and hunger_decay_rate per animal
+- Added _think_timer (~0.5s) to throttle heavy AI queries off the physics loop
+- Rabbit: seeks nearest apple/berry when hungry; flees from wolves within 15u radius
+- Wolf: hunts nearest rabbit within 25u when hungry; eats it on contact
+
+Terrain Traversal
+- Increased MAX_STEP_HEIGHT from 0.8 to 1.2 so animals can climb 1-block terrain steps
+- Replaced jump impulse with smooth position slide-up when bumping into a wall
+
+Spatial Query API (ChunkManager)
+- Added find_nearest_animal(pos, radius, type) to locate prey/predators across chunks
+- Added find_nearest_food(pos, radius) to scan apples and berries across chunks
+- Added consume_food(dict) to remove a food item from a chunk after it is eaten
+- ChunkManager now registers itself in the chunk_manager group for easy Animal lookup
+
+ChunkNode Food Consumption
+- Added consume_apple(index) to dynamically remove a ground apple and rebuild multimesh
+- Added consume_berry(index) to mark a berry as picked and trigger bush mesh rebuild
+
+AnimalRenderer
+- Sets animal_type string on each spawned Animal instance for AI type discrimination
+- Restores saved hunger from snapshot dict when re-spawning an animal after chunk reload
+
+Offline Ecosystem Simulation (EcosystemSimulator)
+- New file: world/ecosystem_simulator.gd
+- catch_up(data): Lotka-Volterra catch-up math runs once on chunk load, approximates
+  rabbit/wolf population changes for the entire time the chunk was unloaded (zero CPU cost while away)
+- snapshot(data, node): saves live animal positions and hunger back to ChunkData before unload
+- Hard caps: MAX_RABBITS=8, MAX_WOLVES=2 per chunk to prevent population explosions
+- Migration system: 5% daily chance a lone animal migrates in if a species goes extinct,
+  preventing permanent ecosystem collapse even if the player kills every wolf or rabbit
+
+ChunkData
+- Added last_sim_time float to track when each chunk was last ecosystem-simulated
+
+Performance
+- Old: ~40 physics bodies + ~160 AI spatial queries/sec across all visible chunks
+- New: ~10 physics bodies + ~40 queries/sec (only near-player chunks run live simulation)
+- Off-screen chunks cost zero CPU; catch-up runs as a single math formula on load
+- System scales flat regardless of how many chunks the player has explored

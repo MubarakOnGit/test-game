@@ -39,7 +39,7 @@ def process_file(filepath):
     bpy.ops.export_scene.gltf(filepath=filepath, export_format='GLB')
     return f"{os.path.basename(filepath)}: {total_polys_before} -> {total_polys_after} polygons"
 
-res1 = process_file(r"c:\Repo\test-game\assets\trees\pine-base_basic_shaded.glb")
-res2 = process_file(r"c:\Repo\test-game\assets\trees\oak-base_basic_shaded.glb")
+res1 = process_file(r"c:\Repo\test-game\assets\crocodile\crocodile_shaded.glb")
+res2 = process_file(r"c:\Repo\test-game\assets\crocodile.glb")
 print(res1)
 print(res2)

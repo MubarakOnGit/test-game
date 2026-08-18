@@ -76,6 +76,25 @@ func _init(p: Profiler, db: WorldDatabase) -> void:
 	_add_speed_btn(speed_row, "▶️ 1x",   1.0)
 	_add_speed_btn(speed_row, "⏩ 10x",  10.0)
 	_add_speed_btn(speed_row, "🚀 60x",  60.0)
+	
+	# ── Render toggles ────────────────────────────────────────────────────────
+	var sep = HSeparator.new()
+	vbox.add_child(sep)
+	
+	var toggle_label = Label.new()
+	toggle_label.text = "Render Toggles (FPS test)"
+	toggle_label.add_theme_color_override("font_color", Color(1, 1, 0.5))
+	vbox.add_child(toggle_label)
+	
+	_add_render_toggle(vbox, "🌿 Grass",      func(n): return [n.grass_multimesh, n.grass_multimesh_b, n.grass_multimesh_c])
+	_add_render_toggle(vbox, "🌸 Flowers",    func(n): return [n.flower_multimesh])
+	_add_render_toggle(vbox, "🌲 Trees",      func(n): return [n.pine_multimesh, n.birch_multimesh, n.simple_multimesh, n.stylized_multimesh])
+	_add_render_toggle(vbox, "🌿 Bushes",     func(n): return [n.bush_a_multimesh, n.rose_bush_multimesh, n.berry_full_multimesh, n.berry_empty_multimesh])
+	_add_render_toggle(vbox, "🍎 Apples",     func(n): return [n.apple_ground_multimesh])
+	_add_render_toggle(vbox, "💧 Water",      func(n): return [n.water_mesh_instance])
+	_add_render_toggle(vbox, "🦊 Animals",    func(n): return [n.animals_container])
+	_add_render_toggle(vbox, "🗺️ Terrain",    func(n): return [n.mesh_instance])
+	_add_render_toggle(vbox, "📐 Outlines",   func(n): return [n.outline_mesh_instance])
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -88,6 +107,23 @@ func _add_speed_btn(parent: HBoxContainer, label_text: String, speed: float) -> 
 			day_night_cycle.time_speed = speed
 	)
 	parent.add_child(btn)
+
+## Creates a checkbox that toggles visibility of nodes returned by [getter] on each ChunkNode.
+## [getter] is a lambda: func(node: ChunkNode) -> Array[Node3D]
+func _add_render_toggle(parent: VBoxContainer, label_text: String, getter: Callable) -> void:
+	var cb = CheckBox.new()
+	cb.text = label_text
+	cb.button_pressed = true
+	cb.toggled.connect(func(on: bool):
+		var wm = get_parent()
+		if not wm or wm.get("chunk_manager") == null:
+			return
+		for chunk_node in wm.chunk_manager._active_nodes.values():
+			for target in getter.call(chunk_node):
+				if target != null:
+					target.visible = on
+	)
+	parent.add_child(cb)
 
 # ─── Per-frame update ─────────────────────────────────────────────────────────
 

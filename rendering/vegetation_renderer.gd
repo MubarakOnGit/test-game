@@ -7,9 +7,6 @@ static var _simple_mesh:   Mesh = null  # Simple Tree.glb
 static var _stylized_mesh: Mesh = null  # Stylized Tree.glb
 static var _bush_a_mesh:   Mesh = null  # Bush A
 static var _rose_bush_mesh:Mesh = null  # Rose Bush
-static var _rock_a_mesh:   Mesh = null  # Rock A
-static var _rock_b_mesh:   Mesh = null  # Rock B
-static var _rock_c_mesh:   Mesh = null  # Rock C
 static var _berry_full_mesh:  Mesh = null  # Berry bush WITH berries (built procedurally)
 static var _berry_empty_mesh: Mesh = null  # Berry bush WITHOUT berries (just leaves)
 
@@ -21,9 +18,6 @@ const _SIMPLE_SCALE   := [3.2, 5.6]   # Broad canopy, most size diversity
 const _STYLIZED_SCALE := [2.6, 4.0]   # Mixed mid-elevation trees
 const _BUSH_A_SCALE   := [0.05, 0.15]   # Small bushes
 const _ROSE_BUSH_SCALE:= [0.05, 0.12]   # Rose bushes
-const _ROCK_A_SCALE   := [0.8, 2.5]   # Single rock
-const _ROCK_B_SCALE   := [1.0, 3.0]   # Rock cluster 1
-const _ROCK_C_SCALE   := [0.6, 1.8]   # Rock cluster 2
 
 static func _ensure_meshes() -> void:
 	if _pine_mesh == null:
@@ -38,12 +32,6 @@ static func _ensure_meshes() -> void:
 		_bush_a_mesh = _extract_mesh("res://assets/elements/Bush by Jarlan Perez - d6STyhH76Qe.glb")
 	if _rose_bush_mesh == null:
 		_rose_bush_mesh = _extract_mesh("res://assets/elements/Rose bush by Poly by Google - aI3Wtnkueq7.glb")
-	if _rock_a_mesh == null:
-		_rock_a_mesh = _extract_mesh("res://assets/elements/Rock by Quaternius - RtLRqYjfMs.glb")
-	if _rock_b_mesh == null:
-		_rock_b_mesh = _extract_mesh("res://assets/elements/Rocks by Don Carson - kCmxD1l2Qu.glb")
-	if _rock_c_mesh == null:
-		_rock_c_mesh = _extract_mesh("res://assets/elements/Rocks by Quaternius - OQvi8PIZ40.glb")
 	if _berry_full_mesh == null or _berry_empty_mesh == null:
 		_build_berry_meshes()
 
@@ -237,19 +225,13 @@ static func commit(node: ChunkNode, data: ChunkData) -> void:
 	var stylized_count := veg.count_of(VegetationData.STYLIZED)
 	var bush_a_count   := veg.count_of(VegetationData.BUSH_A)
 	var rose_bush_count:= veg.count_of(VegetationData.ROSE_BUSH)
-	var rock_a_count   := veg.count_of(VegetationData.ROCK_A)
-	var rock_b_count   := veg.count_of(VegetationData.ROCK_B)
-	var rock_c_count   := veg.count_of(VegetationData.ROCK_C)
 
-	_setup_multimesh(node.pine_multimesh,     pine_count,     _pine_mesh)
-	_setup_multimesh(node.birch_multimesh,    apple_tree_count,    _birch_mesh)
-	_setup_multimesh(node.simple_multimesh,   simple_count,   _simple_mesh)
-	_setup_multimesh(node.stylized_multimesh, stylized_count, _stylized_mesh)
-	_setup_multimesh(node.bush_a_multimesh,   bush_a_count,   _bush_a_mesh)
-	_setup_multimesh(node.rose_bush_multimesh,rose_bush_count,_rose_bush_mesh)
-	_setup_multimesh(node.rock_a_multimesh,   rock_a_count,   _rock_a_mesh)
-	_setup_multimesh(node.rock_b_multimesh,   rock_b_count,   _rock_b_mesh)
-	_setup_multimesh(node.rock_c_multimesh,   rock_c_count,   _rock_c_mesh)
+	_setup_multimesh(node.pine_multimesh,     pine_count,     _pine_mesh, node.sim_zone)
+	_setup_multimesh(node.birch_multimesh,    apple_tree_count,    _birch_mesh, node.sim_zone)
+	_setup_multimesh(node.simple_multimesh,   simple_count,   _simple_mesh, node.sim_zone)
+	_setup_multimesh(node.stylized_multimesh, stylized_count, _stylized_mesh, node.sim_zone)
+	_setup_multimesh(node.bush_a_multimesh,   bush_a_count,   _bush_a_mesh, node.sim_zone)
+	_setup_multimesh(node.rose_bush_multimesh,rose_bush_count, _rose_bush_mesh, node.sim_zone)
 
 	var pine_idx     := 0
 	var birch_idx    := 0
@@ -257,10 +239,6 @@ static func commit(node: ChunkNode, data: ChunkData) -> void:
 	var stylized_idx := 0
 	var bush_a_idx   := 0
 	var rose_bush_idx:= 0
-	var rock_a_idx   := 0
-	var rock_b_idx   := 0
-	var rock_c_idx   := 0
-
 	# Clear previous tree/rock trunk colliders (tagged so we don't wipe terrain collision)
 	for child in node.static_body.get_children():
 		if child.has_meta("trunk_collider"):
@@ -331,18 +309,6 @@ static func commit(node: ChunkNode, data: ChunkData) -> void:
 				if node.rose_bush_multimesh.multimesh != null:
 					node.rose_bush_multimesh.multimesh.set_instance_transform(rose_bush_idx, t)
 				rose_bush_idx += 1
-			VegetationData.ROCK_A:
-				if node.rock_a_multimesh.multimesh != null:
-					node.rock_a_multimesh.multimesh.set_instance_transform(rock_a_idx, t)
-				rock_a_idx += 1
-			VegetationData.ROCK_B:
-				if node.rock_b_multimesh.multimesh != null:
-					node.rock_b_multimesh.multimesh.set_instance_transform(rock_b_idx, t)
-				rock_b_idx += 1
-			VegetationData.ROCK_C:
-				if node.rock_c_multimesh.multimesh != null:
-					node.rock_c_multimesh.multimesh.set_instance_transform(rock_c_idx, t)
-				rock_c_idx += 1
 
 	# Start apple dropping now that all positions are known
 	node.begin_apple_drops()
@@ -359,7 +325,7 @@ static func commit(node: ChunkNode, data: ChunkData) -> void:
 		node.berry_has_berry.append(1)        # start with berries
 		node.berry_respawn_times.append(0.0)
 		node.berry_colors.append(abs(hash(local_pos)) % 2)  # 0=red, 1=violet
-	if bcount > 0:
+	if bcount > 0 and node.sim_zone < 2:
 		node._rebuild_berry_meshes()
 
 ## Adds a cylinder collision shape to the chunk's static_body at a tree trunk position.
@@ -394,13 +360,7 @@ static func _instance_scale(sp: int, pos: Vector3) -> float:
 		VegetationData.BUSH_A:
 			return lerpf(_BUSH_A_SCALE[0],   _BUSH_A_SCALE[1],   t)
 		VegetationData.ROSE_BUSH:
-			return lerpf(_ROSE_BUSH_SCALE[0],_ROSE_BUSH_SCALE[1],t)
-		VegetationData.ROCK_A:
-			return lerpf(_ROCK_A_SCALE[0],   _ROCK_A_SCALE[1],   t)
-		VegetationData.ROCK_B:
-			return lerpf(_ROCK_B_SCALE[0],   _ROCK_B_SCALE[1],   t)
-		VegetationData.ROCK_C:
-			return lerpf(_ROCK_C_SCALE[0],   _ROCK_C_SCALE[1],   t)
+			return lerpf(_ROSE_BUSH_SCALE[0], _ROSE_BUSH_SCALE[1], t)
 	return 1.8  # fallback
 
 ## Height-to-width ratio — pines are tall and narrow, simple trees are wide.
@@ -411,10 +371,7 @@ static func _height_ratio(sp: int) -> float:
 		VegetationData.SIMPLE:   return 0.90   # Broad wide canopy
 		VegetationData.STYLIZED: return 1.10   # Balanced mixed-forest shape
 		VegetationData.BUSH_A:   return 1.00
-		VegetationData.ROSE_BUSH:return 1.00
-		VegetationData.ROCK_A:   return randf_range(0.8, 1.2)  # Some vertical squash/stretch for rocks
-		VegetationData.ROCK_B:   return randf_range(0.8, 1.2)
-		VegetationData.ROCK_C:   return randf_range(0.8, 1.2)
+		VegetationData.ROSE_BUSH: return randf_range(0.9, 1.1)
 	return 1.0
 
 # ─── Mesh Access ─────────────────────────────────────────────────────────────
@@ -427,23 +384,20 @@ static func _get_mesh_for_species(sp: int) -> Mesh:
 		VegetationData.STYLIZED: return _stylized_mesh
 		VegetationData.BUSH_A: return _bush_a_mesh
 		VegetationData.ROSE_BUSH: return _rose_bush_mesh
-		VegetationData.ROCK_A: return _rock_a_mesh
-		VegetationData.ROCK_B: return _rock_b_mesh
-		VegetationData.ROCK_C: return _rock_c_mesh
 	return _pine_mesh
 
 # ─── MultiMesh Setup ─────────────────────────────────────────────────────────
 
-static func _setup_multimesh(mmi: MultiMeshInstance3D, count: int, mesh: Mesh) -> void:
+static func _setup_multimesh(mmi: MultiMeshInstance3D, count: int, mesh: Mesh, zone: int) -> void:
 	if count == 0:
 		mmi.multimesh = null
 		return
-
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.instance_count   = count
-	mm.mesh             = mesh  # Already guaranteed non-null from _extract_mesh
-
-	# Force a massive AABB to prevent Godot from frustum-culling procedurally generated meshes
-	mmi.custom_aabb = AABB(Vector3(-1000, -1000, -1000), Vector3(2000, 2000, 2000))
+	mm.mesh             = mesh
+	mmi.multimesh       = mm
+	mmi.cast_shadow     = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if zone <= 1 else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# AABB covering chunk dimensions
+	mmi.custom_aabb     = AABB(Vector3(-1, -5, -1), Vector3(50, 35, 50))
 	mmi.multimesh   = mm

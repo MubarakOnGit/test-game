@@ -30,7 +30,7 @@ const SKY_KEYS := [
 	[24.0, "#07101f", "#0d1b2a", "#050910", "#8bb6f2"],  # Midnight (wrap)
 ]
 
-# ─── Process ───────────────────────────────────────────────────────────────────
+# ─── Process ──────────────────────────────────────────────────────────────────
 func _process(delta: float) -> void:
 	current_speed = time_speed
 	game_time += delta * time_speed

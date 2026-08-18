@@ -15,7 +15,7 @@ var max_hunger: float = 100.0
 var hunger_decay_rate: float = 2.0 # Hunger lost per second
 
 # ─── State ────────────────────────────────────────────────────────────────────
-enum State { IDLE, WALK, RUN, FLEE, SEEK_FOOD, EAT }
+enum State { IDLE, WALK, RUN, FLEE, SEEK_FOOD, EAT, ATTACK }
 
 var current_state: State = State.IDLE
 var state_timer: float = 0.0
@@ -67,6 +67,20 @@ func _ready() -> void:
 			break
 			
 	_chunk_manager = get_tree().get_first_node_in_group("chunk_manager")
+
+	# Per-species speed tuning
+	if animal_type == "crocodile":
+		walk_speed = 0.6   # Very slow — ambush predator, conserves energy
+		run_speed  = 2.5   # Fast lunge when attacking
+		current_speed = walk_speed
+	elif animal_type == "wolf":
+		walk_speed = 2.5
+		run_speed  = 5.5
+		current_speed = walk_speed
+	elif "rabbit" in animal_type:
+		walk_speed = 2.2
+		run_speed  = 5.0
+		current_speed = walk_speed
 
 	target_rotation_y = rotation.y
 	_pick_new_state()
@@ -145,19 +159,39 @@ func _play_anim(keyword: String) -> void:
 			_anim_tween.kill()
 		_anim_tween = create_tween()
 		
-		if keyword.to_lower() == "idle":
-			# Subtle breathing + look around
+		if animal_type == "crocodile":
 			_anim_tween.set_loops()
-			_anim_tween.tween_property(_visual, "scale", base_scale * Vector3(1.03, 0.97, 1.03), 1.5).set_trans(Tween.TRANS_SINE)
-			_anim_tween.tween_property(_visual, "scale", base_scale, 1.5).set_trans(Tween.TRANS_SINE)
-			if randf() < 0.4:
-				var look_angle = 0.4 if randf() < 0.5 else -0.4
-				_anim_tween.parallel().tween_property(_visual, "rotation:y", look_angle, 0.4)
-				_anim_tween.tween_property(_visual, "rotation:y", 0.0, 0.4).set_delay(1.2)
+			if keyword.to_lower() == "idle":
+				_anim_tween.tween_property(_visual, "scale", base_scale * Vector3(1.02, 0.98, 1.02), 2.0).set_trans(Tween.TRANS_SINE)
+				_anim_tween.tween_property(_visual, "scale", base_scale, 2.0).set_trans(Tween.TRANS_SINE)
+			elif keyword.to_lower() == "walk" or keyword.to_lower() == "run":
+				# Wobble side to side
+				_anim_tween.tween_property(_visual, "rotation:z", 0.1, 0.3).set_trans(Tween.TRANS_SINE)
+				_anim_tween.tween_property(_visual, "rotation:z", -0.1, 0.3).set_trans(Tween.TRANS_SINE)
+			elif keyword.to_lower() == "swim":
+				# Slither side to side in water
+				_anim_tween.tween_property(_visual, "rotation:y", 0.2, 0.4).set_trans(Tween.TRANS_SINE)
+				_anim_tween.tween_property(_visual, "rotation:y", -0.2, 0.4).set_trans(Tween.TRANS_SINE)
+			elif keyword.to_lower() == "attack":
+				_anim_tween.set_loops(0) # Not looping
+				_visual.position.z = 0
+				_anim_tween.tween_property(_visual, "position:z", -0.8, 0.1).set_trans(Tween.TRANS_EXPO) # Lunge forward
+				_anim_tween.tween_property(_visual, "position:z", 0.0, 0.4).set_trans(Tween.TRANS_SINE)  # Return
 		else:
-			# Moving: just reset to neutral, let movement speak for itself
-			_visual.scale = base_scale
-			_visual.rotation = Vector3.ZERO
+			if keyword.to_lower() == "idle":
+				# Subtle breathing + look around
+				_anim_tween.set_loops()
+				_anim_tween.tween_property(_visual, "scale", base_scale * Vector3(1.03, 0.97, 1.03), 1.5).set_trans(Tween.TRANS_SINE)
+				_anim_tween.tween_property(_visual, "scale", base_scale, 1.5).set_trans(Tween.TRANS_SINE)
+				if randf() < 0.4:
+					var look_angle = 0.4 if randf() < 0.5 else -0.4
+					_anim_tween.parallel().tween_property(_visual, "rotation:y", look_angle, 0.4)
+					_anim_tween.tween_property(_visual, "rotation:y", 0.0, 0.4).set_delay(1.2)
+			else:
+				# Moving: just reset to neutral, let movement speak for itself
+				_visual.scale = base_scale
+				_visual.rotation = Vector3.ZERO
+				_visual.position = Vector3.ZERO
 
 # ─── Tile Look-Ahead ──────────────────────────────────────────────────────────
 
@@ -168,7 +202,7 @@ func _is_tile_ok_ahead(direction: Vector3) -> bool:
 	
 	if _ahead_ray.is_colliding():
 		var hit_y = _ahead_ray.get_collision_point().y
-		if hit_y <= 0.0:
+		if not is_water_animal and hit_y <= 0.0:
 			return false
 		if absf(hit_y - global_position.y) > MAX_STEP_HEIGHT:
 			return false
@@ -228,10 +262,10 @@ func _physics_process(delta: float) -> void:
 	if state_timer <= 0.0 and current_state in [State.IDLE, State.WALK, State.RUN]:
 		_pick_new_state()
 
-	var is_in_water := global_position.y <= 0.0
+	var is_in_water := global_position.y <= 0.5
 
-	if current_state in [State.WALK, State.RUN, State.FLEE, State.SEEK_FOOD]:
-		if current_state == State.SEEK_FOOD or current_state == State.FLEE:
+	if current_state in [State.WALK, State.RUN, State.FLEE, State.SEEK_FOOD, State.ATTACK]:
+		if current_state == State.SEEK_FOOD or current_state == State.FLEE or current_state == State.ATTACK:
 			var diff := target_position - global_position
 			diff.y = 0
 			if diff.length_squared() > 0.01:
@@ -245,32 +279,52 @@ func _physics_process(delta: float) -> void:
 
 		if is_water_animal:
 			if not is_in_water:
+				# Bounce back into water
 				last_failed_direction = wander_direction
 				wander_direction *= -1.0
 				velocity.x = wander_direction.x * current_speed
 				velocity.z = wander_direction.z * current_speed
 				target_rotation_y = atan2(wander_direction.x, wander_direction.z)
 			else:
-				velocity.y = sin(Time.get_ticks_msec() * 0.002) * 0.5
+				# Float submerged: body under water, only top of head peeking out
+				# target_y is negative so the croc rides mostly underwater
+				var target_y := -0.8
+				velocity.y = (target_y - global_position.y) * 5.0
 		else:
 			if is_in_water:
-				last_failed_direction = wander_direction
-				wander_direction *= -1.0
-				velocity.x = wander_direction.x * current_speed
-				velocity.z = wander_direction.z * current_speed
+				# Float submerged
+				velocity.y = (-0.4 - global_position.y) * 4.0
+				
+				# If we just hit water, force a rethink occasionally to find land
+				if randf() < 0.05:
+					_think_timer = -1.0
+					
+				# Slow swim
+				velocity.x = wander_direction.x * current_speed * 0.4
+				velocity.z = wander_direction.z * current_speed * 0.4
 				target_rotation_y = atan2(wander_direction.x, wander_direction.z)
 			else:
 				if not is_on_floor():
 					velocity.y -= 9.8 * delta
 				elif is_on_wall():
-					global_position.y += current_speed * 1.5 * delta
-					velocity.y = 0.0
+					if is_on_floor():
+						# Jump to climb blocky terrain steps
+						velocity.y = 4.5
+					
+					# If we've been trying to jump over a wall and keep hitting it (too tall), turn around
+					if randf() < 0.02:
+						_think_timer = -1.0
+						last_failed_direction = wander_direction
 	else:
 		# IDLE or EAT state
 		velocity.x = move_toward(velocity.x, 0.0, walk_speed * 4.0 * delta)
 		velocity.z = move_toward(velocity.z, 0.0, walk_speed * 4.0 * delta)
-		if not is_water_animal and not is_on_floor():
-			velocity.y -= 9.8 * delta
+		if not is_water_animal:
+			if is_in_water:
+				# Float even when idle
+				velocity.y = (-0.4 - global_position.y) * 4.0
+			elif not is_on_floor():
+				velocity.y -= 9.8 * delta
 		elif is_water_animal:
 			velocity.y = move_toward(velocity.y, 0.0, walk_speed * delta)
 
@@ -284,11 +338,15 @@ func _physics_process(delta: float) -> void:
 		State.WALK:
 			if anim_player:
 				anim_player.speed_scale = 1.0
-			_play_anim(move_anim if move_anim != "" else "walk")
-		State.RUN, State.FLEE, State.SEEK_FOOD:
+			# Crocodiles walk if wandering slowly, swim if moving fast
+			if animal_type == "crocodile":
+				_play_anim("walk")
+			else:
+				_play_anim("swim" if is_water_animal else (move_anim if move_anim != "" else "walk"))
+		State.RUN, State.FLEE, State.SEEK_FOOD, State.ATTACK:
 			if anim_player:
-				anim_player.speed_scale = 1.0
-			_play_anim("run")
+				anim_player.speed_scale = 1.5
+			_play_anim("swim" if is_water_animal else "run")
 
 	move_and_slide()
 
@@ -335,5 +393,57 @@ func _think() -> void:
 					target_position = prey.global_position
 				return
 
-	if current_state in [State.FLEE, State.SEEK_FOOD]:
+	elif animal_type == "crocodile":
+		# Crocodile AI: Ambush predator. Eats anything IN the water.
+		# Water surface = y=0.0. Animals floating in water = y~=-0.4.
+		# Land animals stand at y>=1.0. Threshold y<=0.5 = truly in water only.
+		# Priority: Player > Wolf > Rabbit
+		var target: Node3D = null
+		
+		# 1. Check Player
+		var player = get_tree().get_first_node_in_group("player")
+		if player and player.global_position.y <= 0.5:
+			if global_position.distance_to(player.global_position) < 25.0:
+				target = player
+				
+		# 2. Check Wolf (only if in water)
+		if not target:
+			var wolf = _chunk_manager.find_nearest_animal(global_position, 25.0, "wolf")
+			if wolf and wolf.global_position.y <= 0.5:
+				target = wolf
+				
+		# 3. Check Rabbit (only if in water)
+		if not target:
+			var rabbit = _chunk_manager.find_nearest_animal(global_position, 25.0, "blocky_rabbit")
+			if rabbit and rabbit.global_position.y <= 0.5:
+				target = rabbit
+				
+		if target:
+			var dist := global_position.distance_to(target.global_position)
+			if dist < 4.0 and current_state != State.ATTACK:
+				# Lunge and bite!
+				current_state = State.ATTACK
+				current_speed = run_speed * 3.5  # Fast lunge!
+				target_position = target.global_position
+				state_timer = 2.0
+				_play_anim("attack")
+				
+				# Eat the animal (player survives for now)
+				if target != player:
+					target.queue_free()
+					hunger = max_hunger
+				return
+			elif dist < 25.0 and dist >= 4.0:
+				# Pursue prey (swim fast!)
+				current_state = State.SEEK_FOOD
+				current_speed = run_speed * 2.0
+				target_position = target.global_position
+				return
+				
+		# Prey escaped or none found, go back to normal
+		if current_state == State.ATTACK or current_state == State.SEEK_FOOD:
+			_pick_new_state()
+			return
+
+	if current_state in [State.FLEE, State.SEEK_FOOD, State.ATTACK]:
 		_pick_new_state()

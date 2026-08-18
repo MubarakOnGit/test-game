@@ -73,10 +73,10 @@ static func _compute(wx: float, wz: float) -> float:
 	# abs(riv_val) is near 0 at the river centerline → carves a U-shaped channel
 	var riv_val := _river_noise.get_noise_2d(wx, wz)
 	var river_depth : float = 1.0 - absf(riv_val)
-	# Lower threshold (0.75) = wider, more frequent rivers
-	if river_depth > 0.75:
-		var carve : float = (river_depth - 0.75) / 0.25  # 0→1 as we near centre
-		h -= carve * carve * 6.0   # quadratic — smooth U-channel, max -6 at centreline
+	# Lower threshold (0.65) = wider, more frequent rivers
+	if river_depth > 0.65:
+		var carve : float = (river_depth - 0.65) / 0.35  # 0→1 as we near centre
+		h -= carve * carve * 8.0   # quadratic — smooth U-channel, deeper and wider
 
 	# ── Lakes ─────────────────────────────────────────────────────────────────
 	# Lake basins only form in low-lying areas (base_val < 0.1) so they don't
