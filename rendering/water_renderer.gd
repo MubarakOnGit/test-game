@@ -64,8 +64,9 @@ func _init() -> void:
 	_mat_fancy.set_shader_parameter("ripple_params", _ripple_params_array)
 	_mat_fancy.set_shader_parameter("global_time", 0.0)
 	
-	# Start with the cheap material
-	water_plane.material_override = _mat_cheap
+	# Always use the fancy material — water is always visible and the extra
+	# shader cost is minimal for a single flat plane.
+	water_plane.material_override = _mat_fancy
 	
 	add_child(water_plane)
 	
@@ -76,13 +77,10 @@ var _ripple_params_array: Array[Vector4]
 var _next_ripple_idx := 0
 const MAX_RIPPLES := 16
 
-## Called by player when entering or leaving water.
-## Swaps the entire water plane to fancy or cheap shader instantly.
+## Kept for compatibility — ripple effects still trigger on player entering/leaving water.
+## Material no longer swaps, fancy shader is always active.
 func set_player_in_water(in_water: bool) -> void:
-	if _player_in_water == in_water:
-		return
-	_player_in_water = in_water
-	water_plane.material_override = _mat_fancy if in_water else _mat_cheap
+	_player_in_water = in_water  # Still tracked for ripple logic
 
 func _on_ripple_spawned(pos: Vector3, max_age: float, normal_strength: float, foam_strength: float, speed: float) -> void:
 	var idx = _next_ripple_idx
@@ -94,9 +92,8 @@ func _on_ripple_spawned(pos: Vector3, max_age: float, normal_strength: float, fo
 	_mat_fancy.set_shader_parameter("ripple_params", _ripple_params_array)
 
 func _process(_delta: float) -> void:
-	# Only update time on the fancy material — cheap material doesn't need it
-	if _player_in_water:
-		_mat_fancy.set_shader_parameter("global_time", Time.get_ticks_msec() / 1000.0)
+	# Always update time so waves animate continuously across all water
+	_mat_fancy.set_shader_parameter("global_time", Time.get_ticks_msec() / 1000.0)
 
 ## Snaps the water plane to the camera to ensure it covers the visible area
 func update_position(camera_pos: Vector3) -> void:

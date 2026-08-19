@@ -40,6 +40,12 @@ var _visual: Node3D
 var _anim_tween: Tween
 var _chunk_manager = null # Assigned dynamically in _ready
 
+# ─── Crocodile-specific state ─────────────────────────────────────────────────
+var _land_chase_timer: float = 0.0  # How long croc has been chasing on land
+var _water_return_pos: Vector3 = Vector3.ZERO  # Last known water position to return to
+var _is_retreating_to_water: bool = false # Cooldown flag to prevent re-targeting during retreat
+const MAX_LAND_CHASE_TIME := 1.5  # Seconds croc will pursue on land before giving up
+
 # ─── Lifecycle ────────────────────────────────────────────────────────────────
 
 func _ready() -> void:
@@ -90,6 +96,30 @@ func _ready() -> void:
 		print("[Animal] AnimationPlayer found on: ", name, " | Anims: ", anim_player.get_animation_list())
 	else:
 		print("[Animal] NO AnimationPlayer found on: ", name, " — using Tween fallback")
+		
+	# Fix imported materials that might be glowing/unshaded (especially crocodile)
+	_fix_materials(self)
+
+func _fix_materials(node: Node) -> void:
+	if node is MeshInstance3D:
+		var mesh = node.mesh
+		if mesh:
+			for i in range(mesh.get_surface_count()):
+				var mat = mesh.surface_get_material(i)
+				if mat is StandardMaterial3D or mat is ORMMaterial3D:
+					# If the model was relying on emission for its base color, copy it to albedo first
+					if mat.emission_enabled:
+						if mat.albedo_color == Color(0, 0, 0, 1) or mat.albedo_color == Color(1, 1, 1, 1):
+							mat.albedo_color = mat.emission
+						if mat.albedo_texture == null and mat.emission_texture != null:
+							mat.albedo_texture = mat.emission_texture
+							
+					# Force material to respond to light properly
+					mat.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
+					mat.emission_enabled = false
+					
+	for child in node.get_children():
+		_fix_materials(child)
 
 # ─── Animation ────────────────────────────────────────────────────────────────
 
@@ -263,6 +293,40 @@ func _physics_process(delta: float) -> void:
 		_pick_new_state()
 
 	var is_in_water := global_position.y <= 0.5
+	
+	if is_in_water:
+		if not is_in_group("water_prey"):
+			add_to_group("water_prey")
+	else:
+		if is_in_group("water_prey"):
+			remove_from_group("water_prey")
+
+	if animal_type == "crocodile":
+		if is_in_water:
+			if _is_retreating_to_water:
+				# We made it back to the water! Force an immediate rethink so we don't 
+				# keep blindly walking forward (which causes sliding into the opposite shore).
+				_is_retreating_to_water = false
+				_pick_new_state()
+				
+			# Remember last water position so we can return here if chase fails
+			_water_return_pos = global_position
+			_land_chase_timer = 0.0
+		else:
+			_land_chase_timer += delta
+			var dist_from_water = global_position.distance_to(_water_return_pos)
+			
+			# Gave up: turn around and walk back to water
+			if _land_chase_timer > MAX_LAND_CHASE_TIME or dist_from_water > 6.0:
+				_land_chase_timer = 0.0
+				_is_retreating_to_water = true
+				current_state = State.WALK
+				if _water_return_pos != Vector3.ZERO:
+					wander_direction = (_water_return_pos - global_position)
+					wander_direction.y = 0
+					wander_direction = wander_direction.normalized()
+					target_rotation_y = atan2(wander_direction.x, wander_direction.z)
+					state_timer = 6.0  # Walk toward water for 6s
 
 	if current_state in [State.WALK, State.RUN, State.FLEE, State.SEEK_FOOD, State.ATTACK]:
 		if current_state == State.SEEK_FOOD or current_state == State.FLEE or current_state == State.ATTACK:
@@ -278,18 +342,33 @@ func _physics_process(delta: float) -> void:
 		velocity.z = wander_direction.z * current_speed
 
 		if is_water_animal:
+			var is_land_charging := animal_type == "crocodile" and \
+				current_state in [State.SEEK_FOOD, State.ATTACK]
+				
 			if not is_in_water:
-				# Bounce back into water
-				last_failed_direction = wander_direction
-				wander_direction *= -1.0
-				velocity.x = wander_direction.x * current_speed
-				velocity.z = wander_direction.z * current_speed
-				target_rotation_y = atan2(wander_direction.x, wander_direction.z)
+				if is_land_charging:
+					# On a land charge — use normal land physics so croc can run on ground
+					if not is_on_floor():
+						velocity.y -= 9.8 * delta
+					elif is_on_wall():
+						# Jump to climb terrain steps
+						velocity.y = 4.5
+				else:
+					# Not chasing: bounce back into water
+					last_failed_direction = wander_direction
+					wander_direction *= -1.0
+					velocity.x = wander_direction.x * current_speed
+					velocity.z = wander_direction.z * current_speed
+					target_rotation_y = atan2(wander_direction.x, wander_direction.z)
 			else:
-				# Float submerged: body under water, only top of head peeking out
-				# target_y is negative so the croc rides mostly underwater
-				var target_y := -0.8
-				velocity.y = (target_y - global_position.y) * 5.0
+				# In water
+				if is_land_charging and is_on_wall():
+					# If charging prey and hitting the riverbank, leap out of the water!
+					velocity.y = 5.0
+				else:
+					# Float submerged
+					var target_y := -0.8
+					velocity.y = (target_y - global_position.y) * 5.0
 		else:
 			if is_in_water:
 				# Float submerged
@@ -394,30 +473,58 @@ func _think() -> void:
 				return
 
 	elif animal_type == "crocodile":
-		# Crocodile AI: Ambush predator. Eats anything IN the water.
-		# Water surface = y=0.0. Animals floating in water = y~=-0.4.
-		# Land animals stand at y>=1.0. Threshold y<=0.5 = truly in water only.
-		# Priority: Player > Wolf > Rabbit
+		if _is_retreating_to_water:
+			return # Ignore prey until we reach the water!
+			
+		# ── Crocodile AI: Ambush predator ─────────────────────────────────────
+		var croc_in_water := global_position.y <= 0.5
 		var target: Node3D = null
 		
-		# 1. Check Player
-		var player = get_tree().get_first_node_in_group("player")
-		if player and player.global_position.y <= 0.5:
-			if global_position.distance_to(player.global_position) < 25.0:
-				target = player
+		# Iterate over the global water_prey registry instead of chunk searching.
+		# This guarantees we never miss a valid target.
+		var potential_targets = get_tree().get_nodes_in_group("water_prey")
+		
+		var best_player: Node3D = null
+		var best_wolf: Node3D = null
+		var best_rabbit: Node3D = null
+		
+		var min_dist_player := 25.0
+		var min_dist_wolf := 25.0
+		var min_dist_rabbit := 25.0
+		
+		for p in potential_targets:
+			# Skip self
+			if p == self:
+				continue
 				
-		# 2. Check Wolf (only if in water)
-		if not target:
-			var wolf = _chunk_manager.find_nearest_animal(global_position, 25.0, "wolf")
-			if wolf and wolf.global_position.y <= 0.5:
-				target = wolf
+			var dist = global_position.distance_to(p.global_position)
+			if dist > 25.0:
+				continue
 				
-		# 3. Check Rabbit (only if in water)
-		if not target:
-			var rabbit = _chunk_manager.find_nearest_animal(global_position, 25.0, "blocky_rabbit")
-			if rabbit and rabbit.global_position.y <= 0.5:
-				target = rabbit
+			# On land chase, allow targeting slightly higher up the beach (y<=3.0).
+			# In water, only target things in water or just on the edge (y<=1.0).
+			var max_y = 1.0 if croc_in_water else 3.0
+			if p.global_position.y > max_y:
+				continue
 				
+			if p.is_in_group("player") and dist < min_dist_player:
+				min_dist_player = dist
+				best_player = p
+			elif p is Animal and p.animal_type == "wolf" and dist < min_dist_wolf:
+				min_dist_wolf = dist
+				best_wolf = p
+			elif p is Animal and p.animal_type == "blocky_rabbit" and dist < min_dist_rabbit:
+				min_dist_rabbit = dist
+				best_rabbit = p
+				
+		# Assign target based on priority
+		if best_player:
+			target = best_player
+		elif best_wolf:
+			target = best_wolf
+		elif best_rabbit:
+			target = best_rabbit
+			
 		if target:
 			var dist := global_position.distance_to(target.global_position)
 			if dist < 4.0 and current_state != State.ATTACK:
@@ -429,7 +536,7 @@ func _think() -> void:
 				_play_anim("attack")
 				
 				# Eat the animal (player survives for now)
-				if target != player:
+				if not target.is_in_group("player"):
 					target.queue_free()
 					hunger = max_hunger
 				return

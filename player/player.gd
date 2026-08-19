@@ -126,6 +126,8 @@ func _handle_water_ripples(is_moving: bool) -> void:
 		if _water_state == WaterState.LAND:
 			# ENTERING WATER -> Large Splash
 			_water_state = WaterState.IN_WATER
+			if not is_in_group("water_prey"):
+				add_to_group("water_prey")
 			if water_renderer:
 				water_renderer.set_player_in_water(true)
 			WorldEventBus.water_ripple_spawned.emit(global_position, 1.5, 0.8, 1.0, 4.0)
@@ -150,6 +152,8 @@ func _handle_water_ripples(is_moving: bool) -> void:
 		if _water_state == WaterState.IN_WATER:
 			# LEAVING WATER -> Medium Splash
 			_water_state = WaterState.LAND
+			if is_in_group("water_prey"):
+				remove_from_group("water_prey")
 			if water_renderer:
 				water_renderer.set_player_in_water(false)
 			WorldEventBus.water_ripple_spawned.emit(global_position, 1.2, 0.5, 0.8, 3.0)

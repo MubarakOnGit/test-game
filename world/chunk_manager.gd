@@ -267,7 +267,7 @@ func _return_pool_node(node: ChunkNode) -> void:
 
 # ─── Ecosystem Queries ────────────────────────────────────────────────────────
 
-func find_nearest_animal(global_pos: Vector3, radius: float, type: String) -> Node3D:
+func find_nearest_animal(global_pos: Vector3, radius: float, type: String, max_y: float = 999.0) -> Node3D:
 	var closest: Node3D = null
 	var min_dist := radius
 	
@@ -278,6 +278,8 @@ func find_nearest_animal(global_pos: Vector3, radius: float, type: String) -> No
 			
 		for child in node.animals_container.get_children():
 			if child is Animal and child.animal_type == type:
+				if child.global_position.y > max_y:
+					continue
 				var d = child.global_position.distance_to(global_pos)
 				if d < min_dist:
 					min_dist = d
