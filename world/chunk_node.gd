@@ -178,7 +178,10 @@ func _spawn_apple() -> void:
 		var origin: Vector3 = apple_tree_positions[apple_tree_index % apple_tree_positions.size()]
 		apple_tree_index += 1
 		
-		var apple := Apple.new()
+		var apple = NodePool.get_pool_node("apple", null)
+		if not apple:
+			apple = Apple.new()
+		
 		var offset := Vector3(randf_range(-1.5, 1.5), randf_range(3.0, 5.0), randf_range(-1.5, 1.5))
 		apple.position = origin + offset
 		apple.angular_velocity = Vector3(randf_range(-2, 2), randf_range(-2, 2), randf_range(-2, 2))

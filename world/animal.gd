@@ -80,8 +80,10 @@ func _ready() -> void:
 		run_speed  = 2.5   # Fast lunge when attacking
 		current_speed = walk_speed
 	elif animal_type == "wolf":
-		walk_speed = 2.5
-		run_speed  = 5.5
+		# Add $\pm 10\%$ speed jitter so wolves stride dynamically
+		var jitter = randf_range(0.9, 1.1)
+		walk_speed = 2.5 * jitter
+		run_speed  = 5.5 * jitter
 		current_speed = walk_speed
 	elif "rabbit" in animal_type:
 		walk_speed = 2.2
@@ -96,6 +98,9 @@ func _ready() -> void:
 		print("[Animal] AnimationPlayer found on: ", name, " | Anims: ", anim_player.get_animation_list())
 	else:
 		print("[Animal] NO AnimationPlayer found on: ", name, " — using Tween fallback")
+		
+	if animal_type == "wolf":
+		add_to_group("predators")
 		
 	# Fix imported materials that might be glowing/unshaded (especially crocodile)
 	_fix_materials(self)
@@ -280,14 +285,39 @@ func _pick_new_state() -> void:
 
 # ─── Physics ──────────────────────────────────────────────────────────────────
 
-func _physics_process(delta: float) -> void:
+func take_damage() -> void:
+	queue_free()
+
+func _process(delta: float) -> void:
+	var player = get_tree().get_first_node_in_group("player")
+	var dist_to_player = 0.0
+	if player:
+		dist_to_player = global_position.distance_to(player.global_position)
+		
+	if dist_to_player > 55.0:
+		# Tier 3 (Distant): Sleeping state
+		if is_physics_processing():
+			set_physics_process(false)
+			if _visual: _visual.hide()
+		return
+	elif not is_physics_processing():
+		# Wake up
+		set_physics_process(true)
+		if _visual: _visual.show()
+		
+	var think_interval_min = 0.4
+	var think_interval_max = 0.8
+	if dist_to_player > 25.0:
+		# Tier 2 (Perimeter): Throttled AI ticks
+		think_interval_min = 1.2
+		think_interval_max = 1.8
+		
 	hunger = maxf(0.0, hunger - hunger_decay_rate * delta)
 	
 	_think_timer -= delta
 	if _think_timer <= 0.0:
-		_think_timer = randf_range(0.4, 0.8)
+		_think_timer = randf_range(think_interval_min, think_interval_max)
 		_think()
-		
 	state_timer -= delta
 	if state_timer <= 0.0 and current_state in [State.IDLE, State.WALK, State.RUN]:
 		_pick_new_state()
@@ -434,11 +464,21 @@ func _think() -> void:
 		return
 		
 	if animal_type == "blocky_rabbit":
-		var wolf = _chunk_manager.find_nearest_animal(global_position, 15.0, "wolf")
-		if wolf:
+		var predators = get_tree().get_nodes_in_group("predators")
+		var closest_predator: Node3D = null
+		var min_dist := 15.0
+		
+		for p in predators:
+			if p == self: continue
+			var d = global_position.distance_to(p.global_position)
+			if d < min_dist:
+				min_dist = d
+				closest_predator = p
+				
+		if closest_predator:
 			current_state = State.FLEE
-			current_speed = run_speed * 1.2
-			target_position = wolf.global_position
+			current_speed = run_speed
+			target_position = closest_predator.global_position
 			return
 			
 		if hunger < 50.0:
@@ -457,20 +497,87 @@ func _think() -> void:
 				return
 				
 	elif animal_type == "wolf":
-		if hunger < 70.0:
-			var prey = _chunk_manager.find_nearest_animal(global_position, 25.0, "blocky_rabbit")
-			if prey:
-				var dist = global_position.distance_to(prey.global_position)
-				if dist < 1.8:
-					prey.queue_free()
-					hunger = max_hunger
-					current_state = State.EAT
-					state_timer = 3.0
-				else:
-					current_state = State.SEEK_FOOD
-					current_speed = run_speed * 1.1
-					target_position = prey.global_position
-				return
+		var target: Node3D = null
+		
+		# 1. Target player if too close (Aggressive)
+		var player = get_tree().get_first_node_in_group("player")
+		if player and global_position.distance_to(player.global_position) < 12.0:
+			target = player
+			
+		# 2. Target rabbit if hungry
+		if not target and hunger < 70.0:
+			var rabbit = _chunk_manager.find_nearest_animal(global_position, 25.0, "blocky_rabbit")
+			if rabbit:
+				target = rabbit
+				
+		if target:
+			var dist = global_position.distance_to(target.global_position)
+			
+			# Alert the pack!
+			var pack_members = _chunk_manager.find_all_animals_in_radius(global_position, 15.0, "wolf")
+			for wolf in pack_members:
+				if wolf != self and wolf.current_state != State.ATTACK and wolf.current_state != State.EAT:
+					wolf.current_state = State.SEEK_FOOD
+					wolf.target_position = target.global_position
+					# Add a tiny delay so they don't all snap perfectly simultaneously
+					wolf._think_timer = randf_range(0.2, 0.5) 
+			
+			if dist < 1.8:
+				if target.has_method("take_damage"):
+					target.take_damage()
+				elif not target.is_in_group("player"):
+					target.queue_free()
+				hunger = max_hunger
+				current_state = State.EAT
+				state_timer = 3.0
+			else:
+				current_state = State.SEEK_FOOD
+				current_speed = run_speed * 1.1
+				
+				# Flanking Target Force: Add an angular offset based on our instance ID so we surround prey
+				var flank_angle = float(get_instance_id() % 3 - 1) * (PI / 4.0) # -45, 0, or +45 degrees
+				var diff = target.global_position - global_position
+				var rotated_diff = diff.rotated(Vector3.UP, flank_angle)
+				target_position = global_position + rotated_diff
+			return
+			
+		# 3. Emergent Flocking (Boids: Cohesion + Separation)
+		if not target:
+			var pack_members = _chunk_manager.find_all_animals_in_radius(global_position, 20.0, "wolf")
+			var center_of_mass = Vector3.ZERO
+			var separation_vec = Vector3.ZERO
+			var neighbor_count = 0
+			
+			for wolf in pack_members:
+				if wolf == self: continue
+				var d = global_position.distance_to(wolf.global_position)
+				center_of_mass += wolf.global_position
+				neighbor_count += 1
+				
+				# Separation force (push away if < 1.8m)
+				if d < 1.8 and d > 0.1:
+					var push = (global_position - wolf.global_position).normalized() / d
+					separation_vec += push
+					
+			if neighbor_count > 0:
+				center_of_mass /= float(neighbor_count)
+				
+				var target_vec = Vector3.ZERO
+				var d_center = global_position.distance_to(center_of_mass)
+				
+				# Cohesion force (pull toward center if > 4.5m)
+				if d_center > 4.5:
+					target_vec += (center_of_mass - global_position).normalized() * 0.5
+					
+				# Apply separation heavily
+				target_vec += separation_vec * 1.5
+				
+				# If we need to steer, wander in that direction
+				if target_vec.length_squared() > 0.1:
+					current_state = State.WALK
+					current_speed = walk_speed
+					target_position = global_position + target_vec.normalized() * 3.0
+					return
 
 	elif animal_type == "crocodile":
 		if _is_retreating_to_water:
@@ -536,9 +643,11 @@ func _think() -> void:
 				_play_anim("attack")
 				
 				# Eat the animal (player survives for now)
-				if not target.is_in_group("player"):
+				if target.has_method("take_damage"):
+					target.take_damage()
+				elif not target.is_in_group("player"):
 					target.queue_free()
-					hunger = max_hunger
+				hunger = max_hunger
 				return
 			elif dist < 25.0 and dist >= 4.0:
 				# Pursue prey (swim fast!)

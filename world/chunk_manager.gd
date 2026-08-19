@@ -1,7 +1,7 @@
 class_name ChunkManager
 extends Node
 
-const RENDER_DISTANCE := 4
+const RENDER_DISTANCE := 3
 const MAX_UPLOADS_PER_FRAME := 2
 
 var database: WorldDatabase
@@ -285,6 +285,19 @@ func find_nearest_animal(global_pos: Vector3, radius: float, type: String, max_y
 					min_dist = d
 					closest = child
 	return closest
+
+func find_all_animals_in_radius(global_pos: Vector3, radius: float, type: String) -> Array[Node3D]:
+	var results: Array[Node3D] = []
+	for node in _active_nodes.values():
+		var dist = node.global_position.distance_to(global_pos)
+		if dist > radius + 20.0:
+			continue
+			
+		for child in node.animals_container.get_children():
+			if child is Animal and child.animal_type == type:
+				if child.global_position.distance_to(global_pos) <= radius:
+					results.append(child)
+	return results
 
 func find_nearest_food(global_pos: Vector3, radius: float) -> Dictionary:
 	var closest_dict: Dictionary = {}

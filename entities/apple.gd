@@ -11,8 +11,13 @@ const MAX_FALL_TIME  := 8.0    # safety despawn if apple never lands
 
 var _rest_timer: float = 0.0
 var _alive_timer: float = 0.0
+var _initialized: bool = false
 
 func _ready() -> void:
+	if not _initialized:
+		_initialize_physics()
+		
+func _initialize_physics() -> void:
 	# Add mesh
 	var mi := MeshInstance3D.new()
 	mi.mesh = _get_apple_mesh_static()
@@ -34,13 +39,32 @@ func _ready() -> void:
 	physics_material_override = PhysicsMaterial.new()
 	physics_material_override.bounce = 0.35
 	physics_material_override.friction = 0.9
+	_initialized = true
+	
+func _on_pool_acquire() -> void:
+	_alive_timer = 0.0
+	_rest_timer = 0.0
+	linear_velocity = Vector3.ZERO
+	angular_velocity = Vector3.ZERO
+	set_physics_process(true)
+	visible = true
+	freeze = false
+
+func _on_pool_release() -> void:
+	set_physics_process(false)
+	visible = false
+	freeze = true
+	# Disconnect any signals to prevent memory leaks
+	var connections = settled.get_connections()
+	for conn in connections:
+		settled.disconnect(conn.callable)
 
 func _physics_process(delta: float) -> void:
 	_alive_timer += delta
 	
 	# Safety: despawn if it falls forever (e.g. off the edge of terrain)
 	if _alive_timer > MAX_FALL_TIME:
-		queue_free()
+		NodePool.release_node("apple", self)
 		return
 	
 	# Check if the apple has come to rest
@@ -50,7 +74,7 @@ func _physics_process(delta: float) -> void:
 			# Emit the settled signal with world position so the chunk
 			# can bake this into the static MultiMesh
 			settled.emit(global_position)
-			queue_free()
+			NodePool.release_node("apple", self)
 	else:
 		_rest_timer = 0.0
 

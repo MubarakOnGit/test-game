@@ -33,6 +33,8 @@ func _init() -> void:
 	
 func _ready() -> void:
 	add_to_group("player")
+	add_to_group("predators") # Used by rabbits for global flee AI
+	
 	var glb = load("res://assets/man.glb").instantiate()
 	glb.scale = Vector3(2.5, 2.5, 2.5) # Scale up the tiny model
 	add_child(glb)

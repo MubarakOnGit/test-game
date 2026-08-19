@@ -46,22 +46,47 @@ static func generate(data: ChunkData, world_seed: int) -> void:
 			var h = data.heights[hidx]
 			var is_water = h <= ChunkData.SEA_LEVEL or data.water_levels[hidx] > 0.0
 			
-			# Skip water tiles — no aquatic animals
-			if is_water:
-				continue
-			
-			# Land animals: only wolf and blocky_rabbit
 			var pick = h_seed % 100
-			var animal_type = ""
-			if pick < 50: animal_type = "wolf"
-			else: animal_type = "blocky_rabbit"
-			var water_animal = false
 			
-			if animal_type != "":
-				data.animals.push_back({
-					"type": animal_type,
-					"x": float(lx) + 0.5,
-					"y": h,
-					"z": float(lz) + 0.5,
-					"is_water": water_animal
-				})
+			if is_water:
+				# Spawn crocodiles in water (80% chance per valid water cell)
+				if pick < 80:
+					data.animals.push_back({
+						"type": "crocodile",
+						"x": float(lx) + 0.5,
+						"y": h,
+						"z": float(lz) + 0.5,
+						"is_water": true
+					})
+			else:
+				# Land animals — balanced ecosystem:
+				# 0–59  (60%) → Rabbits (small groups of 1–3)
+				# 60–79 (20%) → Wolf pack (2–4 wolves)
+				# 80–99 (20%) → Nothing (natural sparsity)
+				if pick < 60:
+					# Spawn 1-3 rabbits clustered together
+					var rabbit_count = 1 + (h_seed % 3)
+					for i in range(rabbit_count):
+						var angle = float(i) * (TAU / float(rabbit_count))
+						var dist = randf_range(0.5, 1.5)
+						data.animals.push_back({
+							"type": "blocky_rabbit",
+							"x": float(lx) + 0.5 + (cos(angle) * dist),
+							"y": h,
+							"z": float(lz) + 0.5 + (sin(angle) * dist),
+							"is_water": false
+						})
+				elif pick < 80:
+					# Spawn a wolf pack of 2 to 4
+					var pack_size = 2 + (h_seed % 3)
+					for i in range(pack_size):
+						var angle = float(i) * (TAU / float(pack_size))
+						var dist = 1.0 + (float(h_seed % 10) / 10.0)
+						data.animals.push_back({
+							"type": "wolf",
+							"x": float(lx) + 0.5 + (cos(angle) * dist),
+							"y": h,
+							"z": float(lz) + 0.5 + (sin(angle) * dist),
+							"is_water": false
+						})
+				# else: nothing (20% sparsity)
