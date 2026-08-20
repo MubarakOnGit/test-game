@@ -46,6 +46,16 @@ var _water_return_pos: Vector3 = Vector3.ZERO  # Last known water position to re
 var _is_retreating_to_water: bool = false # Cooldown flag to prevent re-targeting during retreat
 const MAX_LAND_CHASE_TIME := 1.5  # Seconds croc will pursue on land before giving up
 
+# ─── Deep River Ambush State ──────────────────────────────────────────────────
+enum AmbushPhase { NONE, STALK, LUNGE, RETREAT, DIVE }
+var is_ambush_croc: bool = false
+var ambush_target: Node3D = null
+var ambush_phase: AmbushPhase = AmbushPhase.NONE
+var _ambush_timer: float = 0.0
+var _ambush_has_bitten: bool = false
+var _ambush_retreat_dir: Vector3 = Vector3.ZERO
+var _ripple_timer: float = 0.0
+
 # ─── Lifecycle ────────────────────────────────────────────────────────────────
 
 func _ready() -> void:
@@ -228,7 +238,7 @@ func _play_anim(keyword: String) -> void:
 				_visual.rotation = Vector3.ZERO
 				_visual.position = Vector3.ZERO
 
-# ─── Tile Look-Ahead ──────────────────────────────────────────────────────────
+# ─── Tile Look-Ahead & Shore Navigation ──────────────────────────────────────
 
 func _is_tile_ok_ahead(direction: Vector3) -> bool:
 	# Cast from high up, 2 units ahead
@@ -237,12 +247,34 @@ func _is_tile_ok_ahead(direction: Vector3) -> bool:
 	
 	if _ahead_ray.is_colliding():
 		var hit_y = _ahead_ray.get_collision_point().y
-		if not is_water_animal and hit_y <= 0.0:
+		# Land animals strictly avoid walking into water during regular wander
+		if not is_water_animal and hit_y <= 0.3:
 			return false
 		if absf(hit_y - global_position.y) > MAX_STEP_HEIGHT:
 			return false
 		return true
 	return false
+
+func _find_nearest_shore() -> Vector3:
+	var best_pos := Vector3.ZERO
+	var min_dist := 999.0
+	# Cast rays in 8 directions across increasing radii (3m, 6m, 10m, 16m)
+	for dist in [3.0, 6.0, 10.0, 16.0]:
+		for i in range(8):
+			var angle = float(i) * (TAU / 8.0)
+			var check_pos = global_position + Vector3(cos(angle) * dist, 0.0, sin(angle) * dist)
+			_ahead_ray.global_position = check_pos + Vector3(0, 8, 0)
+			_ahead_ray.force_raycast_update()
+			if _ahead_ray.is_colliding():
+				var hit = _ahead_ray.get_collision_point()
+				if hit.y > 0.4: # Above sea level = dry land
+					var d = global_position.distance_to(hit)
+					if d < min_dist:
+						min_dist = d
+						best_pos = hit
+		if best_pos != Vector3.ZERO:
+			break
+	return best_pos
 
 # ─── State Machine ────────────────────────────────────────────────────────────
 
@@ -334,19 +366,13 @@ func _process(delta: float) -> void:
 	if animal_type == "crocodile":
 		if is_in_water:
 			if _is_retreating_to_water:
-				# We made it back to the water! Force an immediate rethink so we don't 
-				# keep blindly walking forward (which causes sliding into the opposite shore).
 				_is_retreating_to_water = false
 				_pick_new_state()
-				
-			# Remember last water position so we can return here if chase fails
 			_water_return_pos = global_position
 			_land_chase_timer = 0.0
 		else:
 			_land_chase_timer += delta
 			var dist_from_water = global_position.distance_to(_water_return_pos)
-			
-			# Gave up: turn around and walk back to water
 			if _land_chase_timer > MAX_LAND_CHASE_TIME or dist_from_water > 6.0:
 				_land_chase_timer = 0.0
 				_is_retreating_to_water = true
@@ -356,15 +382,21 @@ func _process(delta: float) -> void:
 					wander_direction.y = 0
 					wander_direction = wander_direction.normalized()
 					target_rotation_y = atan2(wander_direction.x, wander_direction.z)
-					state_timer = 6.0  # Walk toward water for 6s
+					state_timer = 6.0
 
+	# ─── Ambush Crocodile Lifecycle ───────────────────────────────────────────
+	if is_ambush_croc:
+		_handle_ambush_croc_physics(delta)
+		return
+
+	# ─── Standard Movement ───────────────────────────────────────────────────
 	if current_state in [State.WALK, State.RUN, State.FLEE, State.SEEK_FOOD, State.ATTACK]:
-		if current_state == State.SEEK_FOOD or current_state == State.FLEE or current_state == State.ATTACK:
+		if current_state in [State.SEEK_FOOD, State.FLEE, State.ATTACK] or (not is_water_animal and is_in_water):
 			var diff := target_position - global_position
 			diff.y = 0
 			if diff.length_squared() > 0.01:
 				wander_direction = diff.normalized()
-				if current_state == State.FLEE:
+				if current_state == State.FLEE and not is_in_water:
 					wander_direction = -wander_direction
 			target_rotation_y = atan2(wander_direction.x, wander_direction.z)
 			
@@ -377,50 +409,41 @@ func _process(delta: float) -> void:
 				
 			if not is_in_water:
 				if is_land_charging:
-					# On a land charge — use normal land physics so croc can run on ground
+					# On land charge — grounded movement with gravity
 					if not is_on_floor():
 						velocity.y -= 9.8 * delta
-					elif is_on_wall():
-						# Jump to climb terrain steps
-						velocity.y = 4.5
+					elif is_on_wall() and is_on_floor():
+						# Controlled step jump up small ledges
+						velocity.y = 3.5
 				else:
-					# Not chasing: bounce back into water
+					# Bounce back into water
 					last_failed_direction = wander_direction
 					wander_direction *= -1.0
 					velocity.x = wander_direction.x * current_speed
 					velocity.z = wander_direction.z * current_speed
 					target_rotation_y = atan2(wander_direction.x, wander_direction.z)
 			else:
-				# In water
-				if is_land_charging and is_on_wall():
-					# If charging prey and hitting the riverbank, leap out of the water!
-					velocity.y = 5.0
-				else:
-					# Float submerged
-					var target_y := -0.8
-					velocity.y = (target_y - global_position.y) * 5.0
+				# In water — smoothly float at water level (y = -0.5) without flying
+				var target_y := -0.5
+				velocity.y = (target_y - global_position.y) * 4.0
 		else:
 			if is_in_water:
 				# Float submerged
 				velocity.y = (-0.4 - global_position.y) * 4.0
 				
-				# If we just hit water, force a rethink occasionally to find land
-				if randf() < 0.05:
-					_think_timer = -1.0
+				# If we hit the riverbank wall while swimming, hop up onto the dry land!
+				if is_on_wall():
+					velocity.y = 5.5
 					
-				# Slow swim
-				velocity.x = wander_direction.x * current_speed * 0.4
-				velocity.z = wander_direction.z * current_speed * 0.4
+				# Fast swim toward shore
+				velocity.x = wander_direction.x * current_speed
+				velocity.z = wander_direction.z * current_speed
 				target_rotation_y = atan2(wander_direction.x, wander_direction.z)
 			else:
 				if not is_on_floor():
 					velocity.y -= 9.8 * delta
-				elif is_on_wall():
-					if is_on_floor():
-						# Jump to climb blocky terrain steps
-						velocity.y = 4.5
-					
-					# If we've been trying to jump over a wall and keep hitting it (too tall), turn around
+				elif is_on_wall() and is_on_floor():
+					velocity.y = 4.5
 					if randf() < 0.02:
 						_think_timer = -1.0
 						last_failed_direction = wander_direction
@@ -430,12 +453,14 @@ func _process(delta: float) -> void:
 		velocity.z = move_toward(velocity.z, 0.0, walk_speed * 4.0 * delta)
 		if not is_water_animal:
 			if is_in_water:
-				# Float even when idle
 				velocity.y = (-0.4 - global_position.y) * 4.0
 			elif not is_on_floor():
 				velocity.y -= 9.8 * delta
 		elif is_water_animal:
-			velocity.y = move_toward(velocity.y, 0.0, walk_speed * delta)
+			if is_in_water:
+				velocity.y = (-0.5 - global_position.y) * 4.0
+			elif not is_on_floor():
+				velocity.y -= 9.8 * delta
 
 	rotation.y = lerp_angle(rotation.y, target_rotation_y, delta * TURN_SPEED)
 
@@ -447,21 +472,174 @@ func _process(delta: float) -> void:
 		State.WALK:
 			if anim_player:
 				anim_player.speed_scale = 1.0
-			# Crocodiles walk if wandering slowly, swim if moving fast
 			if animal_type == "crocodile":
-				_play_anim("walk")
+				_play_anim("walk" if not is_in_water else "swim")
 			else:
-				_play_anim("swim" if is_water_animal else (move_anim if move_anim != "" else "walk"))
+				_play_anim("swim" if is_in_water else (move_anim if move_anim != "" else "walk"))
 		State.RUN, State.FLEE, State.SEEK_FOOD, State.ATTACK:
 			if anim_player:
 				anim_player.speed_scale = 1.5
-			_play_anim("swim" if is_water_animal else "run")
+			_play_anim("swim" if is_in_water else "run")
 
 	move_and_slide()
 
+func _handle_ambush_croc_physics(delta: float) -> void:
+	_ambush_timer += delta
+	_ripple_timer += delta
+	
+	match ambush_phase:
+		AmbushPhase.STALK:
+			if not is_instance_valid(ambush_target):
+				ambush_phase = AmbushPhase.RETREAT
+				_ambush_timer = 0.0
+				_ambush_retreat_dir = -wander_direction if wander_direction.length_squared() > 0.01 else Vector3.FORWARD
+				return
+				
+			var diff := ambush_target.global_position - global_position
+			diff.y = 0
+			var dist = diff.length()
+			if dist > 0.1:
+				wander_direction = diff.normalized()
+				target_rotation_y = atan2(wander_direction.x, wander_direction.z)
+				
+			# Smooth ascent from depths based on distance to prey
+			var target_y := -0.45
+			if dist > 10.0:
+				target_y = -1.2 # Deep approach
+				if _ripple_timer > 1.2:
+					_ripple_timer = 0.0
+					WorldEventBus.water_ripple_spawned.emit(Vector3(global_position.x, -0.1, global_position.z), 1.2, 0.4, 0.4, 2.0)
+			else:
+				target_y = -0.40 # Surface swim
+				if _ripple_timer > 0.45:
+					_ripple_timer = 0.0
+					WorldEventBus.water_ripple_spawned.emit(Vector3(global_position.x, -0.1, global_position.z), 1.0, 0.7, 0.8, 3.0)
+					
+			velocity.y = (target_y - global_position.y) * 4.0
+			
+			current_speed = 5.2 # Ominous pursuit speed (gives player 2.5-3.5s to reach shore!)
+			velocity.x = wander_direction.x * current_speed
+			velocity.z = wander_direction.z * current_speed
+			_play_anim("swim")
+			
+			# Dynamic scale & pitch (emerging from deep murky water)
+			if _visual:
+				var target_scale = Vector3(1.3, 1.3, 1.3)
+				var depth_ratio = clampf((global_position.y - (-2.5)) / 1.7, 0.05, 1.0)
+				_visual.scale = target_scale * depth_ratio
+				var pitch_target = deg_to_rad(15.0) if global_position.y < -0.6 else 0.0
+				_visual.rotation.x = lerp_angle(_visual.rotation.x, pitch_target, delta * 3.0)
+			
+			# Check if target escaped onto dry land!
+			var target_in_water := ambush_target.global_position.y <= 0.5 and ambush_target.is_in_group("water_prey")
+			if not target_in_water and dist < 5.0:
+				# Prey escaped to dry shore! Lunge once at bank and retreat
+				ambush_phase = AmbushPhase.LUNGE
+				_ambush_timer = 0.0
+				_ambush_has_bitten = true # Don't bite escaped prey
+				_ambush_retreat_dir = -wander_direction
+				_play_anim("attack")
+				return
+				
+			# Strike if in range
+			if dist < 2.2 and target_in_water:
+				ambush_phase = AmbushPhase.LUNGE
+				_ambush_timer = 0.0
+				_play_anim("attack")
+				
+			# Safety: if chasing too long (> 8.0s), turn around
+			if _ambush_timer > 8.0:
+				ambush_phase = AmbushPhase.RETREAT
+				_ambush_timer = 0.0
+				_ambush_retreat_dir = -wander_direction
+				
+		AmbushPhase.LUNGE:
+			# Jaw snap / thrash at water surface
+			velocity.x = move_toward(velocity.x, 0.0, 10.0 * delta)
+			velocity.z = move_toward(velocity.z, 0.0, 10.0 * delta)
+			velocity.y = (-0.35 - global_position.y) * 4.0
+			
+			if _visual:
+				_visual.scale = Vector3(1.3, 1.3, 1.3)
+				_visual.rotation.x = lerp_angle(_visual.rotation.x, 0.0, delta * 6.0)
+			
+			if not _ambush_has_bitten and is_instance_valid(ambush_target):
+				var target_in_water := ambush_target.global_position.y <= 0.5 and ambush_target.is_in_group("water_prey")
+				if target_in_water and global_position.distance_to(ambush_target.global_position) < 3.0:
+					_ambush_has_bitten = true
+					WorldEventBus.water_ripple_spawned.emit(global_position, 2.0, 1.2, 1.2, 4.5)
+					if ambush_target.has_method("take_damage"):
+						ambush_target.take_damage()
+					elif not ambush_target.is_in_group("player"):
+						ambush_target.queue_free()
+				else:
+					_ambush_has_bitten = true # Missed / escaped onto shore!
+					
+			if _ambush_timer > 1.2:
+				ambush_phase = AmbushPhase.RETREAT
+				_ambush_timer = 0.0
+				if _ambush_retreat_dir == Vector3.ZERO:
+					_ambush_retreat_dir = -wander_direction if wander_direction.length_squared() > 0.01 else Vector3.FORWARD
+					
+		AmbushPhase.RETREAT:
+			# Turn around smoothly and swim back toward open water / river channel
+			target_rotation_y = atan2(_ambush_retreat_dir.x, _ambush_retreat_dir.z)
+			current_speed = 3.5
+			velocity.x = _ambush_retreat_dir.x * current_speed
+			velocity.z = _ambush_retreat_dir.z * current_speed
+			
+			# Gradually slope downward
+			var target_y := -0.4 - (_ambush_timer * 0.7)
+			velocity.y = (target_y - global_position.y) * 3.0
+			_play_anim("swim")
+			
+			if _visual:
+				var target_scale = Vector3(1.3, 1.3, 1.3)
+				if global_position.y < -0.8:
+					var depth_ratio = clampf(1.0 - ((-0.8 - global_position.y) / 1.8), 0.05, 1.0)
+					_visual.scale = target_scale * depth_ratio
+				_visual.rotation.x = lerp_angle(_visual.rotation.x, deg_to_rad(-18.0), delta * 2.5)
+			
+			if _ripple_timer > 0.8:
+				_ripple_timer = 0.0
+				WorldEventBus.water_ripple_spawned.emit(Vector3(global_position.x, -0.1, global_position.z), 1.0, 0.4, 0.4, 2.0)
+				
+			if _ambush_timer > 2.5 or global_position.y < -1.8:
+				ambush_phase = AmbushPhase.DIVE
+				_ambush_timer = 0.0
+				
+		AmbushPhase.DIVE:
+			# Deep dive into the abyss before despawning
+			velocity.x = _ambush_retreat_dir.x * 2.0
+			velocity.z = _ambush_retreat_dir.z * 2.0
+			velocity.y = -2.5 # Dive deep under riverbed
+			_play_anim("swim")
+			
+			if _visual:
+				var depth_ratio = clampf(1.0 - ((-0.8 - global_position.y) / 2.0), 0.01, 1.0)
+				_visual.scale = Vector3(1.3, 1.3, 1.3) * depth_ratio
+				_visual.rotation.x = lerp_angle(_visual.rotation.x, deg_to_rad(-25.0), delta * 2.5)
+			
+			if global_position.y <= -3.0 or _ambush_timer > 3.0:
+				queue_free()
+				return
+				
+	rotation.y = lerp_angle(rotation.y, target_rotation_y, delta * TURN_SPEED)
+	move_and_slide()
+
+
 func _think() -> void:
-	if not _chunk_manager:
+	if not _chunk_manager or is_ambush_croc:
 		return
+		
+	# ─── Land Animal Emergency Water Escape ────────────────────────────────────
+	if not is_water_animal and global_position.y <= 0.5:
+		var shore := _find_nearest_shore()
+		if shore != Vector3.ZERO:
+			current_state = State.RUN
+			current_speed = run_speed * 1.2
+			target_position = shore
+			return
 		
 	if animal_type == "blocky_rabbit":
 		var predators = get_tree().get_nodes_in_group("predators")

@@ -91,6 +91,33 @@ static func commit(node: ChunkNode, data: ChunkData) -> void:
 
 		node.animals_container.add_child(instance)
 
+static func spawn_ambush_crocodile(parent: Node, spawn_pos: Vector3, target: Node3D) -> Animal:
+	var scene = _get_animal_scene("crocodile")
+	if not scene:
+		return null
+	var visual = scene.instantiate()
+	visual.scale = Vector3(0.01, 0.01, 0.01) # Starts hidden deep in murky water
+	
+	var instance = CharacterBody3D.new()
+	instance.set_script(_animal_script)
+	instance.set("animal_type", "crocodile")
+	instance.set("move_anim", "swim")
+	instance.add_child(visual)
+	instance.is_water_animal = true
+	instance.global_position = spawn_pos
+	
+	# Configure as ambush predator
+	instance.add_to_group("ambush_crocs")
+	instance.is_ambush_croc = true
+	instance.ambush_target = target
+	instance.ambush_phase = Animal.AmbushPhase.STALK
+	instance.current_state = Animal.State.ATTACK
+	
+	_fix_mesh_shadows(visual)
+	parent.add_child(instance)
+	return instance
+
+
 static func _fix_mesh_shadows(node: Node) -> void:
 	if node is MeshInstance3D:
 		var mi := node as MeshInstance3D
